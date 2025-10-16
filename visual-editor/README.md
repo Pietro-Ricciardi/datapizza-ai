@@ -136,8 +136,15 @@ Ogni nodo dichiara un file `node.json` (vedi esempio sotto) e opzionalmente un f
    - Deploy su server + autenticazione.
    - Marketplace nodi (pubblicazione di pacchetti `datapizza-ai-visual-node-*`).
 
+## Sviluppo locale
+1. Eseguire `make visual-editor-dev` dalla root del repository per installare le dipendenze (`npm install`) e avviare Vite in modalità dev (`npm run dev`).
+2. È possibile usare direttamente `npm run dev` all'interno di `visual-editor/` per avviare il server dopo la prima installazione.
+3. Il target di make non modifica componenti esterni alla cartella, preservando l'autonomia del progetto.
+
+## Decisioni operative
+- ✅ Il visual editor rimane **standalone**: vedi [decision log](../docs/visual-editor/standalone.md).
+- 🚫 Non creare workspace monorepo JS condivisi con il resto del repository.
+
 ## Prossimi passi
-- Definire scaffolding (script `make visual-editor-dev` nel repo principale).
-- Valutare se integrare monorepo JS (pnpm workspace) o mantenere progetto standalone.
-- Preparare guide di contribuzione specifiche e template per aggiunta nodi.
+- Preparare guide di contribuzione specifiche e template per l'aggiunta di nodi (in attesa).
 

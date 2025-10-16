@@ -24,3 +24,6 @@ run_docs:
 	uv pip install mkdocs-material  pymdown-extensions mkdocs-awesome-pages-plugin mkdocstrings-python
 	uv run mkdocs serve --livereload
 
+visual-editor-dev:
+	cd visual-editor && ( [ -d node_modules ] || npm install ) && npm run dev
+
