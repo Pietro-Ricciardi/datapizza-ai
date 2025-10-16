@@ -76,6 +76,13 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 12px;
   overflow: hidden;
+  position: relative;
+  min-height: 520px;
+  height: 100%;
+}
+
+.editor-canvas .react-flow__container {
+  height: 100%;
 }
 
 @media (max-width: 1024px) {

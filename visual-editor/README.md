@@ -148,6 +148,12 @@ Ogni nodo dichiara un file `node.json` (vedi esempio sotto) e opzionalmente un f
 ## Prossimi passi
 - Preparare guide di contribuzione specifiche e template per l'aggiunta di nodi (in attesa).
 
+## Stato attuale
+
+- ✅ Frontend scaffold basato su **Vite + React + TypeScript** avviabile con `npm run dev`.
+- ✅ Canvas React Flow pronto all'uso con zoom/pan, minimappa e controlli nativi.
+- ✅ Store Zustand con nodi di esempio per testare l'interazione con il canvas.
+
 ## Cosa implementare subito
 Per iniziare a sviluppare l'editor in piccoli passi mantenendo un feedback rapido, concentrarsi su:
 
