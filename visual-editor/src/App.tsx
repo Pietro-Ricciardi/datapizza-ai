@@ -1,28 +1,36 @@
-import React from "react";
-import { ReactFlowProvider } from "reactflow";
-import { shallow } from "zustand/shallow";
+import { useState } from "react";
 
-import { EditorCanvas } from "./components/EditorCanvas";
-import { Sidebar } from "./components/Sidebar";
-import { useEditorStore } from "./state/editorStore";
+import viteLogo from "/vite.svg";
+import reactLogo from "./assets/react.svg";
+import "./App.css";
 
-export default function App(): React.JSX.Element {
-  const [nodes, edges] = useEditorStore((state) => [state.nodes, state.edges], shallow);
+function App(): JSX.Element {
+  const [count, setCount] = useState(0);
 
   return (
-    <div className="app-shell">
-      <header className="app-header">
-        <h1>Datapizza Visual Editor</h1>
-        <p className="app-subtitle">
-          Standalone playground for orchestrating Datapizza workflows.
+    <div className="app">
+      <div>
+        <a href="https://vitejs.dev" target="_blank" rel="noreferrer">
+          <img src={viteLogo} className="logo" alt="Vite logo" />
+        </a>
+        <a href="https://react.dev" target="_blank" rel="noreferrer">
+          <img src={reactLogo} className="logo react" alt="React logo" />
+        </a>
+      </div>
+      <h1>Vite + React</h1>
+      <div className="card">
+        <button type="button" onClick={() => setCount((prev) => prev + 1)}>
+          count is {count}
+        </button>
+        <p>
+          Edit <code>src/App.tsx</code> and save to test HMR
         </p>
-      </header>
-      <main className="app-main">
-        <Sidebar />
-        <ReactFlowProvider>
-          <EditorCanvas nodes={nodes} edges={edges} />
-        </ReactFlowProvider>
-      </main>
+      </div>
+      <p className="read-the-docs">
+        Click on the Vite and React logos to learn more
+      </p>
     </div>
   );
 }
+
+export default App;
