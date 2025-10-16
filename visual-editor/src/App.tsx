@@ -1,8 +1,10 @@
 import React from "react";
+import { ReactFlowProvider } from "reactflow";
 import { shallow } from "zustand/shallow";
-import { useEditorStore } from "./state/editorStore";
+
 import { EditorCanvas } from "./components/EditorCanvas";
 import { Sidebar } from "./components/Sidebar";
+import { useEditorStore } from "./state/editorStore";
 
 export default function App(): React.JSX.Element {
   const [nodes, edges] = useEditorStore((state) => [state.nodes, state.edges], shallow);
@@ -17,7 +19,9 @@ export default function App(): React.JSX.Element {
       </header>
       <main className="app-main">
         <Sidebar />
-        <EditorCanvas nodes={nodes} edges={edges} />
+        <ReactFlowProvider>
+          <EditorCanvas nodes={nodes} edges={edges} />
+        </ReactFlowProvider>
       </main>
     </div>
   );
