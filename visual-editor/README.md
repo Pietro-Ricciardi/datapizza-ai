@@ -148,3 +148,26 @@ Ogni nodo dichiara un file `node.json` (vedi esempio sotto) e opzionalmente un f
 ## Prossimi passi
 - Preparare guide di contribuzione specifiche e template per l'aggiunta di nodi (in attesa).
 
+## Cosa implementare subito
+Per iniziare a sviluppare l'editor in piccoli passi mantenendo un feedback rapido, concentrarsi su:
+
+1. **Setup tecnico minimo**
+   - Inizializzare il progetto Vite + React + TypeScript.
+   - Integrare React Flow con un canvas vuoto e supporto allo zoom/pan.
+
+2. **Nodi fondamentali dell'MVP**
+   - Implementare i nodi base (HTTP Trigger, Agent OpenAI, Tool Python, Webhook Response) con i relativi `node.json`.
+   - Aggiungere un inspector minimale per modificare le proprietà principali (prompt, endpoint, ecc.).
+
+3. **Gestione stato e persistenza**
+   - Configurare Zustand per mantenere nodi/edge in memoria.
+   - Abilitare salvataggio/caricamento da `localStorage` ed export/import manuale JSON.
+
+4. **Backend stub**
+   - Creare il microservizio FastAPI con endpoint `/inventory` (ritorna nodi base) e `/run` (ritorna risposta mock).
+   - Documentare come avviare il backend insieme al frontend per i test.
+
+5. **Osservabilità e test**
+   - Abilitare logging strutturato lato frontend e backend.
+   - Preparare test end-to-end basilari (es. Playwright) per garantire che il drag&drop e l'export funzionino.
+
