@@ -362,3 +362,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 [![Star History Chart](https://api.star-history.com/svg?repos=datapizza-labs/datapizza-ai&type=Date)](https://www.star-history.com/#datapizza-labs/datapizza-ai&Date)
 
 </div>
+
+## 🧩 Visual Editor
+
+Il visual editor è sviluppato come applicazione React/TypeScript autonoma nella cartella [`visual-editor/`](visual-editor).
+
+- Avvio rapido: eseguire `make visual-editor-dev` dalla root del repository per installare le dipendenze npm e lanciare Vite in modalità sviluppo.
+- In alternativa è possibile usare `npm run dev` dentro `visual-editor/` dopo l'installazione iniziale.
+- La decisione architetturale di mantenere il progetto **standalone** è documentata in [`docs/visual-editor/standalone.md`](docs/visual-editor/standalone.md) e non deve essere modificata.
+
+Per contributi futuri (es. aggiunta nodi) verranno fornite guide dedicate una volta completato lo scaffolding.
+
