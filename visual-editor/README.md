@@ -207,13 +207,62 @@ Le utility `toReactFlowGraph` e `fromReactFlowGraph` garantiscono la compatibili
 2. Propagare le nuove proprietà alle utility di conversione (incluso `src/workflow-serialization.ts`).
 3. Documentare le modifiche aggiornando esempi JSON/YAML e test correlati.
 
+## Backend FastAPI per import/export
+
+Per sperimentare l'integrazione con Datapizza AI è disponibile un backend leggero
+in `visual-editor/backend/` che espone endpoint REST di validazione ed
+esecuzione mock dei workflow.
+
+### Requisiti backend
+
+- Python >= 3.10
+
+### Installazione dipendenze
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### Avvio server FastAPI
+
+```bash
+uvicorn app.main:app --reload
+```
+
+È disponibile anche un target `make dev` nella directory `backend/` che
+avvia `uvicorn` con le stesse opzioni.
+
+Il server viene esposto per default su `http://127.0.0.1:8000`. In ambiente di
+sviluppo è possibile configurare `uvicorn` con l'opzione `--host 0.0.0.0` per
+consentire l'accesso dal frontend in esecuzione all'interno di container.
+
+### Endpoint disponibili
+
+- `GET /workflow/schema`: restituisce lo schema JSON del formato supportato.
+- `POST /workflow/validate`: valida un workflow e ritorna l'esito con elenco
+  degli eventuali problemi riscontrati.
+- `POST /workflow/import`: normalizza e restituisce il workflow ricevuto dal
+  frontend.
+- `POST /workflow/export`: consente di serializzare un workflow prima di
+  persisterlo o inviarlo ad altri servizi.
+- `POST /workflow/execute`: esegue un run mock tramite il motore integrato e
+  restituisce una traccia dei nodi eseguiti.
+
+Ogni endpoint accetta e restituisce payload coerenti con le interfacce
+TypeScript presenti in `src/workflow-format.ts`. La validazione server-side
+assicurata dai modelli Pydantic evita la propagazione di workflow inconsistenti
+verso servizi esterni.
+
 ## Roadmap prossimi step
 
 Con il bootstrap completato, i prossimi passi prevedono:
 
 1. ~~Definire lo store dell'applicazione (Zustand o alternativa) per la gestione dei nodi.~~ Completato con `useWorkflowStore` basato su Zustand.
 2. Modellare il formato dei workflow esportabili/importabili (JSON/YAML).
-3. Preparare un backend leggero (FastAPI) per serializzazione, validazione ed esecuzione dei workflow.
+3. ~~Preparare un backend leggero (FastAPI) per serializzazione, validazione ed esecuzione dei workflow.~~ Completato con l'applicazione FastAPI in `visual-editor/backend/`.
 
 ## Note operative
 - Il visual editor deve rimanere **standalone** e non condividere configurazioni con il resto del repository.
