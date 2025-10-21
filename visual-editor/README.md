@@ -53,7 +53,7 @@ L'applicazione monta un esempio di workflow di machine learning composto da nodi
 Il visual editor espone un formato di serializzazione pensato per essere esportato in **JSON** o in **YAML** senza modifiche. La definizione è disponibile in `src/workflow-format.ts` ed è descritta dai seguenti elementi principali:
 
 - `version`: identifica il formato supportato (`datapizza.workflow/v1`).
-- `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore, tag, identificativo esterno, timestamp).
+- `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore con contatti, tag, identificativo esterno, timestamp).
 - `nodes`: elenco dei nodi con tipo logico (`input`, `task`, `output`), posizione nel canvas, etichetta visuale e configurazioni specifiche (`data`).
 - `edges`: collegamenti direzionali tra nodi con eventuali metadati (es. etichette, riferimenti a porte specifiche).
 - `extensions`: spazio opzionale per impostazioni di frontend e backend. Le estensioni correnti includono `reactFlow` (viewport, stato pannelli, preferenze di snapping) per ripristinare l'interfaccia e `backend` per passare suggerimenti all'esecutore.
@@ -67,7 +67,7 @@ Il visual editor espone un formato di serializzazione pensato per essere esporta
     "name": "ML Pipeline Demo",
     "description": "Esempio di pipeline di machine learning composto da fasi sequenziali.",
     "tags": ["demo", "ml"],
-    "author": { "name": "Datapizza" },
+    "author": { "name": "Datapizza", "email": "editor@datapizza.ai" },
     "externalId": "wf-demo-001",
     "createdAt": "2024-01-01T00:00:00.000Z",
     "updatedAt": "2024-01-15T12:34:56.000Z"
@@ -143,6 +143,7 @@ metadata:
     - ml
   author:
     name: Datapizza
+    email: editor@datapizza.ai
   externalId: wf-demo-001
   createdAt: "2024-01-01T00:00:00.000Z"
   updatedAt: "2024-01-15T12:34:56.000Z"
