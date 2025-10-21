@@ -14,7 +14,7 @@ const workflowMetadata: WorkflowMetadata = {
   description:
     "Esempio di pipeline di machine learning composto da fasi sequenziali.",
   tags: ["demo", "ml"],
-  author: { name: "Datapizza" },
+  author: { name: "Datapizza", email: "editor@datapizza.ai" },
   createdAt: "2024-01-01T00:00:00.000Z",
 };
 

@@ -13,8 +13,12 @@ const workflow: WorkflowDefinition = {
   version: WORKFLOW_FORMAT_VERSION,
   metadata: {
     name: "Round trip test",
+    description: "Workflow di test per validare la serializzazione.",
     tags: ["test"],
-    author: { name: "Tester" },
+    author: { name: "Tester", email: "tester@datapizza.ai" },
+    externalId: "wf-test-serialization",
+    createdAt: "2024-05-01T09:30:00.000Z",
+    updatedAt: "2024-05-02T15:45:00.000Z",
   },
   nodes: [
     {
