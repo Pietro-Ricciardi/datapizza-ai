@@ -32,22 +32,31 @@ npm run build
 
 Per visualizzare l'output della build è disponibile anche `npm run preview`.
 
+### Test unitari
+
+```bash
+npm run test
+```
+
+La suite utilizza [Vitest](https://vitest.dev/) per verificare la serializzazione dei workflow e la compatibilità con React Flow.
+
 ## Gestione dello stato con Zustand
 
 Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizzato nello store definito in `src/store/workflow-store.ts`. Lo store espone azioni dedicate per l'inizializzazione del canvas, l'applicazione dei cambiamenti provenienti da React Flow e la creazione automatica di connessioni `smoothstep` animate. Questo approccio evita la duplicazione della logica di aggiornamento e rende più semplice estendere il workflow editor con pannelli di configurazione o controlli esterni al canvas.
 
 ## Workflow graph con React Flow
 
-L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Per personalizzare il grafo iniziale aggiornare l'oggetto `initialWorkflow` definito in `src/App.tsx`, che viene convertito in nodi e archi tramite le utility presenti in `src/workflow-format.ts`.
+L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Per personalizzare il grafo iniziale aggiornare l'oggetto `initialWorkflow` definito in `src/App.tsx`. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto.
 
 ## Formato di esportazione/importazione dei workflow
 
 Il visual editor espone un formato di serializzazione pensato per essere esportato in **JSON** o in **YAML** senza modifiche. La definizione è disponibile in `src/workflow-format.ts` ed è descritta dai seguenti elementi principali:
 
 - `version`: identifica il formato supportato (`datapizza.workflow/v1`).
-- `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore, tag, timestamp).
+- `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore, tag, identificativo esterno, timestamp).
 - `nodes`: elenco dei nodi con tipo logico (`input`, `task`, `output`), posizione nel canvas, etichetta visuale e configurazioni specifiche (`data`).
 - `edges`: collegamenti direzionali tra nodi con eventuali metadati (es. etichette, riferimenti a porte specifiche).
+- `extensions`: spazio opzionale per impostazioni di frontend e backend. Le estensioni correnti includono `reactFlow.viewport` per ripristinare la vista dell'editor e `backend` per passare suggerimenti all'esecutore.
 
 ### Esempio JSON
 
@@ -59,9 +68,21 @@ Il visual editor espone un formato di serializzazione pensato per essere esporta
     "description": "Esempio di pipeline di machine learning composto da fasi sequenziali.",
     "tags": ["demo", "ml"],
     "author": { "name": "Datapizza" },
-    "createdAt": "2024-01-01T00:00:00.000Z"
+    "externalId": "wf-demo-001",
+    "createdAt": "2024-01-01T00:00:00.000Z",
+    "updatedAt": "2024-01-15T12:34:56.000Z"
   },
   "nodes": [
+    {
+      "id": "start",
+      "kind": "input",
+      "label": "Origine",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "component": "datapizza.source.dataset",
+        "parameters": { "name": "customers" }
+      }
+    },
     {
       "id": "prepare",
       "kind": "task",
@@ -71,19 +92,120 @@ Il visual editor espone un formato di serializzazione pensato per essere esporta
         "component": "datapizza.preprocessing.prepare",
         "parameters": { "strategy": "standardize" }
       }
+    },
+    {
+      "id": "deploy",
+      "kind": "output",
+      "label": "Deploy",
+      "position": { "x": 0, "y": 360 },
+      "data": {
+        "component": "datapizza.deployment.push",
+        "parameters": { "environment": "staging" }
+      }
     }
   ],
   "edges": [
     {
       "id": "e1",
-      "source": { "nodeId": "start" },
-      "target": { "nodeId": "prepare" }
+      "source": { "nodeId": "start", "portId": "out" },
+      "target": { "nodeId": "prepare", "portId": "in" },
+      "label": "dataset",
+      "metadata": { "optional": false }
+    },
+    {
+      "id": "e2",
+      "source": { "nodeId": "prepare" },
+      "target": { "nodeId": "deploy" }
     }
-  ]
+  ],
+  "extensions": {
+    "reactFlow": {
+      "viewport": { "x": 80, "y": 40, "zoom": 1.1 }
+    },
+    "backend": {
+      "queue": "ml-default"
+    }
+  }
 }
 ```
 
-La versione YAML corrispondente si ottiene convertendo lo stesso payload mantenendo inalterata la struttura dei campi. Le utility `toReactFlowGraph` e `fromReactFlowGraph` permettono rispettivamente di trasformare un workflow serializzato nelle strutture richieste da React Flow e di generare l'oggetto esportabile a partire dallo stato attuale del canvas.
+### Esempio YAML
+
+```yaml
+version: datapizza.workflow/v1
+metadata:
+  name: ML Pipeline Demo
+  description: Esempio di pipeline di machine learning composto da fasi sequenziali.
+  tags:
+    - demo
+    - ml
+  author:
+    name: Datapizza
+  externalId: wf-demo-001
+  createdAt: "2024-01-01T00:00:00.000Z"
+  updatedAt: "2024-01-15T12:34:56.000Z"
+nodes:
+  - id: start
+    kind: input
+    label: Origine
+    position:
+      x: 0
+      y: 0
+    data:
+      component: datapizza.source.dataset
+      parameters:
+        name: customers
+  - id: prepare
+    kind: task
+    label: Prepara dati
+    position:
+      x: 0
+      y: 120
+    data:
+      component: datapizza.preprocessing.prepare
+      parameters:
+        strategy: standardize
+  - id: deploy
+    kind: output
+    label: Deploy
+    position:
+      x: 0
+      y: 360
+    data:
+      component: datapizza.deployment.push
+      parameters:
+        environment: staging
+edges:
+  - id: e1
+    source:
+      nodeId: start
+      portId: out
+    target:
+      nodeId: prepare
+      portId: in
+    label: dataset
+    metadata:
+      optional: false
+  - id: e2
+    source:
+      nodeId: prepare
+    target:
+      nodeId: deploy
+extensions:
+  reactFlow:
+    viewport:
+      x: 80
+      y: 40
+      zoom: 1.1
+  backend:
+    queue: ml-default
+```
+
+Le utility `toReactFlowGraph` e `fromReactFlowGraph` garantiscono la compatibilità con React Flow, mentre `serializeWorkflowFromStore` e `initializeWorkflowStoreFromDefinition` gestiscono la conversione diretta dello stato di `useWorkflowStore`. Per estendere lo schema:
+
+1. Aggiornare le interfacce TypeScript in `src/workflow-format.ts`, mantenendo i nuovi campi serializzabili.
+2. Propagare le nuove proprietà alle utility di conversione (incluso `src/workflow-serialization.ts`).
+3. Documentare le modifiche aggiornando esempi JSON/YAML e test correlati.
 
 ## Roadmap prossimi step
 

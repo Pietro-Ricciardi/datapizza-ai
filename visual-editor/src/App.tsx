@@ -2,14 +2,12 @@ import { useCallback, useEffect } from "react";
 import { Background, Controls, MiniMap, ReactFlow } from "reactflow";
 import "./App.css";
 import "reactflow/dist/style.css";
-import {
-  WORKFLOW_FORMAT_VERSION,
-  fromReactFlowGraph,
-  toReactFlowGraph,
-  type WorkflowDefinition,
-  type WorkflowMetadata,
-} from "./workflow-format";
+import { WORKFLOW_FORMAT_VERSION, type WorkflowDefinition, type WorkflowMetadata } from "./workflow-format";
 import { useWorkflowStore } from "./store/workflow-store";
+import {
+  initializeWorkflowStoreFromDefinition,
+  serializeWorkflowFromStore,
+} from "./workflow-serialization";
 
 const workflowMetadata: WorkflowMetadata = {
   name: "ML Pipeline Demo",
@@ -68,10 +66,7 @@ const initialWorkflow: WorkflowDefinition = {
   ],
 };
 
-const { nodes: initialNodes, edges: initialEdges } = toReactFlowGraph(initialWorkflow);
-
 function App(): JSX.Element {
-  const initializeWorkflow = useWorkflowStore((state) => state.initialize);
   const nodes = useWorkflowStore((state) => state.nodes);
   const edges = useWorkflowStore((state) => state.edges);
   const onNodesChange = useWorkflowStore((state) => state.onNodesChange);
@@ -79,21 +74,20 @@ function App(): JSX.Element {
   const onConnect = useWorkflowStore((state) => state.onConnect);
 
   useEffect(() => {
-    initializeWorkflow(initialNodes, initialEdges);
-  }, [initializeWorkflow]);
+    initializeWorkflowStoreFromDefinition(initialWorkflow);
+  }, []);
 
   const exportWorkflow = useCallback(() => {
-    const snapshot = fromReactFlowGraph({
-      nodes,
-      edges,
+    const snapshot = serializeWorkflowFromStore({
       metadata: {
         ...workflowMetadata,
         updatedAt: new Date().toISOString(),
       },
+      version: WORKFLOW_FORMAT_VERSION,
     });
 
     console.info("Workflow serializzato", snapshot);
-  }, [edges, nodes]);
+  }, []);
 
   return (
     <div className="app">
