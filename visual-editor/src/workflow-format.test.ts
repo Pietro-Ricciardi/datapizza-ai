@@ -72,6 +72,8 @@ const sampleWorkflow: WorkflowDefinition = {
         y: 200,
         zoom: 1.25,
       },
+      sidebarOpen: false,
+      inspectorTab: "preview",
     },
     backend: {
       queue: "ml-default",
@@ -86,6 +88,7 @@ describe("workflow-format", () => {
     expect(graph.nodes).toHaveLength(sampleWorkflow.nodes.length);
     expect(graph.edges).toHaveLength(sampleWorkflow.edges.length);
     expect(graph.viewport).toEqual(sampleWorkflow.extensions?.reactFlow?.viewport);
+    expect(graph.reactFlow).toEqual(sampleWorkflow.extensions?.reactFlow);
 
     const [inputNode] = graph.nodes;
     expect(inputNode?.type).toBe("input");

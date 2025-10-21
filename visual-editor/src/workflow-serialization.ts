@@ -7,19 +7,26 @@ import {
   type WorkflowDefinitionExtensions,
   type WorkflowFormatVersion,
   type WorkflowMetadata,
-  type WorkflowReactFlowViewport,
+  type WorkflowReactFlowSettings,
 } from "./workflow-format";
 
 export interface SerializeWorkflowFromStoreOptions {
   metadata: WorkflowMetadata;
   version?: WorkflowFormatVersion;
   extensions?: WorkflowDefinitionExtensions;
+  /**
+   * Optional React Flow UI state captured from the editor (e.g. viewport,
+   * sidebars) that must be merged back into the workflow extensions when
+   * serialising.
+   */
+  reactFlow?: WorkflowReactFlowSettings;
 }
 
 export function serializeWorkflowFromStore({
   metadata,
   version = WORKFLOW_FORMAT_VERSION,
   extensions,
+  reactFlow,
 }: SerializeWorkflowFromStoreOptions): WorkflowDefinition {
   const { nodes, edges } = useWorkflowStore.getState();
 
@@ -28,17 +35,47 @@ export function serializeWorkflowFromStore({
     edges,
     metadata,
     version,
-    extensions,
+    extensions: mergeExtensionsWithReactFlow(extensions, reactFlow),
   });
 }
 
 export function initializeWorkflowStoreFromDefinition(
   workflow: WorkflowDefinition,
-): WorkflowReactFlowViewport | undefined {
+): WorkflowReactFlowSettings | undefined {
   const { initialize } = useWorkflowStore.getState();
-  const { nodes, edges, viewport } = toReactFlowGraph(workflow);
+  const { nodes, edges, reactFlow } = toReactFlowGraph(workflow);
 
   initialize(nodes, edges);
 
-  return viewport;
+  return reactFlow;
+}
+
+function cloneSerializable<T>(value: T): T {
+  if (value === undefined) {
+    return value;
+  }
+
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function mergeExtensionsWithReactFlow(
+  extensions: WorkflowDefinitionExtensions | undefined,
+  reactFlow: WorkflowReactFlowSettings | undefined,
+): WorkflowDefinitionExtensions | undefined {
+  if (!extensions && !reactFlow) {
+    return undefined;
+  }
+
+  const baseExtensions = extensions ? cloneSerializable(extensions) : {};
+
+  if (reactFlow) {
+    const mergedReactFlow = {
+      ...(baseExtensions.reactFlow ?? {}),
+      ...cloneSerializable(reactFlow),
+    };
+
+    baseExtensions.reactFlow = mergedReactFlow;
+  }
+
+  return baseExtensions;
 }

@@ -64,14 +64,16 @@ export interface WorkflowReactFlowViewport {
   zoom: number;
 }
 
+export interface WorkflowReactFlowSettings {
+  viewport?: WorkflowReactFlowViewport;
+  [key: string]: unknown;
+}
+
 export interface WorkflowDefinitionExtensions {
   /**
    * Frontend specific settings used to restore the editor UI (e.g. viewport).
    */
-  reactFlow?: {
-    viewport?: WorkflowReactFlowViewport;
-    [key: string]: unknown;
-  };
+  reactFlow?: WorkflowReactFlowSettings;
   /** Backend specific hints such as execution targets or scheduling options. */
   backend?: Record<string, unknown>;
   [key: string]: unknown;
@@ -97,6 +99,17 @@ export interface ToReactFlowResult {
   nodes: Node[];
   edges: Edge[];
   viewport?: WorkflowReactFlowViewport;
+  /**
+   * Full React Flow settings extracted from the workflow extensions so that
+   * callers can restore additional UI state besides the viewport (e.g. panel
+   * visibility, snapping preferences).
+   */
+  reactFlow?: WorkflowReactFlowSettings;
+  /**
+   * Deep clone of the workflow extensions to preserve backend/frontend
+   * specific metadata when rehydrating the editor.
+   */
+  extensions?: WorkflowDefinitionExtensions;
 }
 
 export interface WorkflowGraphSnapshot {
@@ -180,10 +193,18 @@ export function toReactFlowGraph(workflow: WorkflowDefinition): ToReactFlowResul
     } satisfies Edge;
   });
 
+  const extensions = workflow.extensions
+    ? cloneSerializable(workflow.extensions)
+    : undefined;
+
+  const reactFlowSettings = extensions?.reactFlow;
+
   return {
     nodes,
     edges,
-    viewport: workflow.extensions?.reactFlow?.viewport,
+    viewport: reactFlowSettings?.viewport,
+    reactFlow: reactFlowSettings,
+    extensions,
   };
 }
 
