@@ -1,34 +1,94 @@
-import { useState } from "react";
-
-import viteLogo from "/vite.svg";
-import reactLogo from "./assets/react.svg";
+import { useCallback } from "react";
+import type { Connection, Edge, Node } from "reactflow";
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+} from "reactflow";
 import "./App.css";
+import "reactflow/dist/style.css";
+
+const initialNodes: Node[] = [
+  {
+    id: "start",
+    type: "input",
+    position: { x: 0, y: 0 },
+    data: { label: "Inizio" },
+  },
+  {
+    id: "prepare",
+    position: { x: 0, y: 120 },
+    data: { label: "Prepara dati" },
+  },
+  {
+    id: "train",
+    position: { x: 0, y: 240 },
+    data: { label: "Allena modello" },
+  },
+  {
+    id: "deploy",
+    type: "output",
+    position: { x: 0, y: 380 },
+    data: { label: "Deploy" },
+  },
+];
+
+const initialEdges: Edge[] = [
+  { id: "e1", source: "start", target: "prepare" },
+  { id: "e2", source: "prepare", target: "train" },
+  { id: "e3", source: "train", target: "deploy" },
+];
 
 function App(): JSX.Element {
-  const [count, setCount] = useState(0);
+  const [nodes, , onNodesChange] = useNodesState(initialNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+
+  const onConnect = useCallback(
+    (connection: Edge | Connection) =>
+      setEdges((existingEdges) =>
+        addEdge(
+          {
+            ...connection,
+            type: "smoothstep",
+            animated: true,
+          },
+          existingEdges,
+        ),
+      ),
+    [setEdges],
+  );
 
   return (
     <div className="app">
-      <div>
-        <a href="https://vitejs.dev" target="_blank" rel="noreferrer">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank" rel="noreferrer">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button type="button" onClick={() => setCount((prev) => prev + 1)}>
-          count is {count}
-        </button>
+      <header className="app__header">
+        <h1>Workflow Visual Editor</h1>
         <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
+          Questo esempio utilizza React Flow per rappresentare un workflow di
+          machine learning. Aggiungi nodi e connessioni per modellare i tuoi
+          processi.
         </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
+      </header>
+      <main className="app__content">
+        <ReactFlow
+          className="workflow-canvas"
+          style={{ width: "100%", height: "100%" }}
+          fitView
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          proOptions={{ hideAttribution: true }}
+        >
+          <MiniMap zoomable pannable />
+          <Controls showInteractive={false} />
+          <Background gap={16} color="#e5e7eb" />
+        </ReactFlow>
+      </main>
     </div>
   );
 }
