@@ -254,7 +254,10 @@ consentire l'accesso dal frontend in esecuzione all'interno di container.
 Ogni endpoint accetta e restituisce payload coerenti con le interfacce
 TypeScript presenti in `src/workflow-format.ts`. La validazione server-side
 assicurata dai modelli Pydantic evita la propagazione di workflow inconsistenti
-verso servizi esterni.
+verso servizi esterni. Oltre alla definizione del workflow, il file esporta
+anche i tipi `WorkflowValidationResponse`, `WorkflowExecutionResult` e
+`WorkflowSchemaResponse` che descrivono le risposte fornite dagli endpoint di
+validazione, esecuzione e introspezione dello schema.
 
 ## Roadmap prossimi step
 
