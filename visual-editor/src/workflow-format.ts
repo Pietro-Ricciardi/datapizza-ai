@@ -104,6 +104,40 @@ export interface WorkflowGraphSnapshot {
   edges: Edge[];
 }
 
+export type WorkflowValidationIssue = string;
+
+export interface WorkflowValidationResponse {
+  valid: boolean;
+  issues: WorkflowValidationIssue[];
+}
+
+export type WorkflowExecutionStepStatus = "pending" | "running" | "completed";
+
+export interface WorkflowExecutionStep {
+  nodeId: string;
+  status: WorkflowExecutionStepStatus;
+  /** Additional information surfaced by the executor for debugging purposes. */
+  details?: string;
+}
+
+export type WorkflowExecutionResultStatus = "success" | "failure";
+
+export interface WorkflowExecutionResult {
+  runId: string;
+  status: WorkflowExecutionResultStatus;
+  steps: WorkflowExecutionStep[];
+  /**
+   * Arbitrary serialisable payload emitted by the executor. The structure is
+   * intentionally loose to accommodate different backends (e.g. metrics,
+   * summaries, artefact references).
+   */
+  outputs: Record<string, unknown>;
+}
+
+export interface WorkflowSchemaResponse {
+  schema: Record<string, unknown>;
+}
+
 const DEFAULT_NODE_TYPE: Node["type"] = "default";
 
 function cloneSerializable<T>(value: T): T {
