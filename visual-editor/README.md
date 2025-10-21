@@ -4,7 +4,7 @@ Interfaccia web dedicata alla creazione visuale dei workflow Datapizza. Il proge
 
 ## Setup iniziale
 
-Il frontend è stato inizializzato con [Vite](https://vitejs.dev/) utilizzando il template **React + TypeScript**. La struttura generata fornisce un punto di partenza minimale con hot module replacement e tooling TypeScript già configurato. L'interfaccia include ora un canvas interattivo basato su [React Flow](https://reactflow.dev/) per la rappresentazione dei workflow.
+Il frontend è stato inizializzato con [Vite](https://vitejs.dev/) utilizzando il template **React + TypeScript**. La struttura generata fornisce un punto di partenza minimale con hot module replacement e tooling TypeScript già configurato. L'interfaccia include ora un canvas interattivo basato su [React Flow](https://reactflow.dev/) per la rappresentazione dei workflow e uno store condiviso costruito con [Zustand](https://zustand-demo.pmnd.rs/) per governare nodi e connessioni.
 
 ### Requisiti
 - Node.js >= 18
@@ -31,6 +31,10 @@ npm run build
 ```
 
 Per visualizzare l'output della build è disponibile anche `npm run preview`.
+
+## Gestione dello stato con Zustand
+
+Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizzato nello store definito in `src/store/workflow-store.ts`. Lo store espone azioni dedicate per l'inizializzazione del canvas, l'applicazione dei cambiamenti provenienti da React Flow e la creazione automatica di connessioni `smoothstep` animate. Questo approccio evita la duplicazione della logica di aggiornamento e rende più semplice estendere il workflow editor con pannelli di configurazione o controlli esterni al canvas.
 
 ## Workflow graph con React Flow
 
@@ -85,7 +89,7 @@ La versione YAML corrispondente si ottiene convertendo lo stesso payload mantene
 
 Con il bootstrap completato, i prossimi passi prevedono:
 
-1. Definire lo store dell'applicazione (Zustand o alternativa) per la gestione dei nodi.
+1. ~~Definire lo store dell'applicazione (Zustand o alternativa) per la gestione dei nodi.~~ Completato con `useWorkflowStore` basato su Zustand.
 2. Modellare il formato dei workflow esportabili/importabili (JSON/YAML).
 3. Preparare un backend leggero (FastAPI) per serializzazione, validazione ed esecuzione dei workflow.
 

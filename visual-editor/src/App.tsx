@@ -1,14 +1,5 @@
-import { useCallback } from "react";
-import type { Connection, Edge } from "reactflow";
-import {
-  Background,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  addEdge,
-  useEdgesState,
-  useNodesState,
-} from "reactflow";
+import { useCallback, useEffect } from "react";
+import { Background, Controls, MiniMap, ReactFlow } from "reactflow";
 import "./App.css";
 import "reactflow/dist/style.css";
 import {
@@ -18,6 +9,7 @@ import {
   type WorkflowDefinition,
   type WorkflowMetadata,
 } from "./workflow-format";
+import { useWorkflowStore } from "./store/workflow-store";
 
 const workflowMetadata: WorkflowMetadata = {
   name: "ML Pipeline Demo",
@@ -79,23 +71,16 @@ const initialWorkflow: WorkflowDefinition = {
 const { nodes: initialNodes, edges: initialEdges } = toReactFlowGraph(initialWorkflow);
 
 function App(): JSX.Element {
-  const [nodes, , onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const initializeWorkflow = useWorkflowStore((state) => state.initialize);
+  const nodes = useWorkflowStore((state) => state.nodes);
+  const edges = useWorkflowStore((state) => state.edges);
+  const onNodesChange = useWorkflowStore((state) => state.onNodesChange);
+  const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange);
+  const onConnect = useWorkflowStore((state) => state.onConnect);
 
-  const onConnect = useCallback(
-    (connection: Edge | Connection) =>
-      setEdges((existingEdges) =>
-        addEdge(
-          {
-            ...connection,
-            type: "smoothstep",
-            animated: true,
-          },
-          existingEdges,
-        ),
-      ),
-    [setEdges],
-  );
+  useEffect(() => {
+    initializeWorkflow(initialNodes, initialEdges);
+  }, [initializeWorkflow]);
 
   const exportWorkflow = useCallback(() => {
     const snapshot = fromReactFlowGraph({
