@@ -46,7 +46,7 @@ Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizz
 
 ## Workflow graph con React Flow
 
-L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Per personalizzare il grafo iniziale aggiornare l'oggetto `initialWorkflow` definito in `src/App.tsx`. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto.
+L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Per personalizzare il grafo iniziale aggiornare l'oggetto `initialWorkflow` definito in `src/App.tsx`. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto. `initializeWorkflowStoreFromDefinition` restituisce l'intero stato React Flow persistito nelle estensioni (viewport, pannelli, ecc.), mentre `serializeWorkflowFromStore` accetta un oggetto `reactFlow` opzionale per sovrascrivere o aggiungere nuove preferenze dell'interfaccia al momento dell'export.
 
 ## Formato di esportazione/importazione dei workflow
 
@@ -56,7 +56,7 @@ Il visual editor espone un formato di serializzazione pensato per essere esporta
 - `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore, tag, identificativo esterno, timestamp).
 - `nodes`: elenco dei nodi con tipo logico (`input`, `task`, `output`), posizione nel canvas, etichetta visuale e configurazioni specifiche (`data`).
 - `edges`: collegamenti direzionali tra nodi con eventuali metadati (es. etichette, riferimenti a porte specifiche).
-- `extensions`: spazio opzionale per impostazioni di frontend e backend. Le estensioni correnti includono `reactFlow.viewport` per ripristinare la vista dell'editor e `backend` per passare suggerimenti all'esecutore.
+- `extensions`: spazio opzionale per impostazioni di frontend e backend. Le estensioni correnti includono `reactFlow` (viewport, stato pannelli, preferenze di snapping) per ripristinare l'interfaccia e `backend` per passare suggerimenti all'esecutore.
 
 ### Esempio JSON
 
@@ -120,7 +120,9 @@ Il visual editor espone un formato di serializzazione pensato per essere esporta
   ],
   "extensions": {
     "reactFlow": {
-      "viewport": { "x": 80, "y": 40, "zoom": 1.1 }
+      "viewport": { "x": 80, "y": 40, "zoom": 1.1 },
+      "sidebarOpen": true,
+      "inspectorTab": "preview"
     },
     "backend": {
       "queue": "ml-default"
@@ -197,6 +199,8 @@ extensions:
       x: 80
       y: 40
       zoom: 1.1
+    sidebarOpen: true
+    inspectorTab: preview
   backend:
     queue: ml-default
 ```

@@ -48,6 +48,8 @@ const workflow: WorkflowDefinition = {
   extensions: {
     reactFlow: {
       viewport: { x: 0, y: 0, zoom: 1 },
+      sidebarOpen: true,
+      inspectorTab: "configuration",
     },
   },
 };
@@ -58,13 +60,13 @@ beforeEach(() => {
 
 describe("workflow-serialization", () => {
   it("populates the store from a workflow definition", () => {
-    const viewport = initializeWorkflowStoreFromDefinition(workflow);
+    const reactFlowState = initializeWorkflowStoreFromDefinition(workflow);
     const state = useWorkflowStore.getState();
 
     expect(state.nodes).toHaveLength(workflow.nodes.length);
     expect(state.edges).toHaveLength(workflow.edges.length);
     expect(state.nodes[0]?.data?.label).toBe("Input");
-    expect(viewport).toEqual(workflow.extensions?.reactFlow?.viewport);
+    expect(reactFlowState).toEqual(workflow.extensions?.reactFlow);
   });
 
   it("serialises the store into a workflow definition", () => {
@@ -77,5 +79,27 @@ describe("workflow-serialization", () => {
     });
 
     expect(snapshot).toEqual(workflow);
+  });
+
+  it("merges react flow state overrides when serialising", () => {
+    initializeWorkflowStoreFromDefinition(workflow);
+
+    const snapshot = serializeWorkflowFromStore({
+      metadata: workflow.metadata,
+      version: workflow.version,
+      extensions: workflow.extensions,
+      reactFlow: {
+        viewport: { x: 120, y: -40, zoom: 1.5 },
+        sidebarOpen: false,
+        lastSelection: ["process"],
+      },
+    });
+
+    expect(snapshot.extensions?.reactFlow).toEqual({
+      viewport: { x: 120, y: -40, zoom: 1.5 },
+      inspectorTab: "configuration",
+      sidebarOpen: false,
+      lastSelection: ["process"],
+    });
   });
 });
