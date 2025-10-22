@@ -151,6 +151,7 @@ Per garantire la compatibilità con il loader Python viene introdotto `src/workf
 
 - Il pannello "Cronologia esecuzioni" mostra tutte le run effettuate durante la sessione, permette di filtrare per stato (in corso, completate, fallite, archiviate), riavviare una run precedente e scaricare gli artefatti JSON prodotti dal backend.
 - Ogni esecuzione espone i log in tempo quasi reale grazie al polling del nuovo endpoint FastAPI (`GET /workflow/runs/{run_id}/logs`); la UI utilizza una lista virtualizzata (`LogViewer`) per gestire agevolmente anche flussi lunghi.
+- Il `LogViewer` offre selettori per livello (`info`, `warning`, `error`), filtri per componente/sorgente e un'azione "Esporta log" che scarica il buffer corrente in formato `.ndjson`.
 - La store Zustand mantiene uno storico (`history`) con definizione, opzioni runtime, risultato e stato di archiviazione di ogni run, rendendo possibile la funzionalità di retry e la sincronizzazione con la cronologia del backend.
 - Il client `src/services/workflow-api.ts` supporta ora sia l'esecuzione sincrona classica (`POST /workflow/execute`) sia quella asincrona/streaming (`POST /workflow/runs` con polling di stato/log) ed espone helper per elencare, archiviare e riavviare run (`GET /workflow/runs`, `POST /workflow/runs/{run_id}/archive`, `POST /workflow/runs/{run_id}/retry`).
 

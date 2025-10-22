@@ -37,19 +37,71 @@ export type WorkflowRunSummary = Omit<
   "steps" | "result" | "error"
 >;
 
+export type WorkflowRunLogLevel = "info" | "warning" | "error";
+
 export interface WorkflowRunLogEntry {
   id: string;
   sequence: number;
   timestamp: string;
   message: string;
-  level: "info" | "warning" | "error";
+  level: WorkflowRunLogLevel;
   nodeId?: string;
+  source?: string;
 }
 
 export interface WorkflowRunLogResponse {
   runId: string;
   logs: WorkflowRunLogEntry[];
   nextCursor: number;
+}
+
+interface WorkflowRunLogMetadataPayload {
+  timestamp?: string;
+  level?: string;
+  source?: string;
+}
+
+interface WorkflowRunLogEntryPayload {
+  id: string;
+  sequence: number;
+  message: string;
+  timestamp?: string;
+  level?: string;
+  nodeId?: string;
+  source?: string;
+  metadata?: WorkflowRunLogMetadataPayload | null;
+}
+
+interface WorkflowRunLogResponsePayload {
+  runId: string;
+  logs: WorkflowRunLogEntryPayload[];
+  nextCursor: number;
+}
+
+const LOG_LEVELS: readonly WorkflowRunLogLevel[] = ["info", "warning", "error"] as const;
+
+function normalizeLogLevel(value?: string | null): WorkflowRunLogLevel {
+  if (value && LOG_LEVELS.includes(value as WorkflowRunLogLevel)) {
+    return value as WorkflowRunLogLevel;
+  }
+  return "info";
+}
+
+function normalizeLogEntry(payload: WorkflowRunLogEntryPayload): WorkflowRunLogEntry {
+  const metadata = payload.metadata ?? {};
+  const timestamp = metadata.timestamp ?? payload.timestamp ?? new Date().toISOString();
+  const source = metadata.source ?? payload.source;
+  const level = normalizeLogLevel(metadata.level ?? payload.level);
+
+  return {
+    id: payload.id,
+    sequence: payload.sequence,
+    message: payload.message,
+    nodeId: payload.nodeId,
+    timestamp,
+    level,
+    source,
+  };
 }
 
 export interface ExecuteWorkflowOptions {
@@ -315,7 +367,7 @@ export async function fetchWorkflowRunLogs(
     endpoint.searchParams.set("after", String(after));
   }
 
-  return requestJson<WorkflowRunLogResponse>(
+  const response = await requestJson<WorkflowRunLogResponsePayload>(
     endpoint.toString(),
     {
       method: "GET",
@@ -324,6 +376,12 @@ export async function fetchWorkflowRunLogs(
     },
     "Impossibile recuperare i log dell'esecuzione",
   );
+
+  return {
+    runId: response.runId,
+    nextCursor: response.nextCursor,
+    logs: response.logs.map(normalizeLogEntry),
+  };
 }
 
 export async function listWorkflowRuns({
