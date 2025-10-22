@@ -112,6 +112,21 @@ export const translations = {
       apply: "Applica",
       nodesTitle: "Nodi preconfigurati",
       nodesDescription: "Trascina i nodi nel canvas per arricchire il workflow corrente.",
+      searchLabel: "Filtra catalogo",
+      searchPlaceholder: "Cerca per nome, descrizione o tag",
+      filtersTitle: "Tag disponibili",
+      filtersAriaLabel: "Filtri del catalogo",
+      clearFilters: "Azzera filtri",
+      tagsEmpty: "Nessun tag disponibile",
+      resultsSummary: (count: number) =>
+        count === 1 ? "1 risultato disponibile" : `${count} risultati disponibili`,
+      workflowsResultLabel: "Workflow trovati",
+      nodesResultLabel: "Nodi trovati",
+      emptyStateTitle: "Nessun elemento corrisponde ai filtri",
+      emptyStateDescription:
+        "Modifica la ricerca o seleziona tag differenti per visualizzare template e nodi.",
+      workflowsEmpty: "Nessun workflow corrisponde ai filtri correnti.",
+      nodesEmpty: "Nessun nodo corrisponde ai filtri correnti.",
     },
     importDialog: {
       eyebrow: "Importazione",
@@ -268,6 +283,21 @@ export const translations = {
       apply: "Apply",
       nodesTitle: "Preconfigured nodes",
       nodesDescription: "Drag nodes onto the canvas to enrich the current workflow.",
+      searchLabel: "Filter catalog",
+      searchPlaceholder: "Search by name, description, or tag",
+      filtersTitle: "Available tags",
+      filtersAriaLabel: "Catalog filters",
+      clearFilters: "Clear filters",
+      tagsEmpty: "No tags available",
+      resultsSummary: (count: number) =>
+        count === 1 ? "1 result available" : `${count} results available`,
+      workflowsResultLabel: "Workflows found",
+      nodesResultLabel: "Nodes found",
+      emptyStateTitle: "No items match the selected filters",
+      emptyStateDescription:
+        "Adjust the search or pick different tags to explore available templates and nodes.",
+      workflowsEmpty: "No workflows match the current filters.",
+      nodesEmpty: "No nodes match the current filters.",
     },
     importDialog: {
       eyebrow: "Import",

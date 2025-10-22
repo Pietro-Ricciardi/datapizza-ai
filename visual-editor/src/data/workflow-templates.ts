@@ -30,6 +30,7 @@ export interface NodeTemplate {
   icon: string;
   category: WorkflowTemplateCategory;
   data?: Record<string, unknown>;
+  tags?: string[];
 }
 
 export const NODE_TEMPLATES: NodeTemplate[] = [
@@ -40,6 +41,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Legge dati grezzi da bucket S3 o data lake.",
     icon: "🗂️",
     category: "ml",
+    tags: ["ml", "dataset", "ingestion"],
     data: {
       component: "datapizza.source.dataset",
       parameters: { format: "parquet" },
@@ -52,6 +54,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Applica trasformazioni e scaling alle feature numeriche.",
     icon: "🧮",
     category: "ml",
+    tags: ["ml", "features", "preprocessing"],
     data: {
       component: "datapizza.features.build",
       parameters: { encoder: "onehot" },
@@ -64,6 +67,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Allena un modello supervisionato su dataset curato.",
     icon: "🤖",
     category: "ml",
+    tags: ["ml", "training", "model"],
     data: {
       component: "datapizza.training.fit",
       parameters: { algorithm: "lightgbm" },
@@ -76,6 +80,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Distribuisce il modello allenato su endpoint managed.",
     icon: "🚀",
     category: "ml",
+    tags: ["ml", "serving", "deployment"],
     data: {
       component: "datapizza.deployment.push",
       parameters: { environment: "production" },
@@ -88,6 +93,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Recupera file CSV da storage esterno.",
     icon: "📥",
     category: "etl",
+    tags: ["etl", "csv", "ingestion"],
     data: {
       component: "datapizza.etl.extract.csv",
       parameters: { delimiter: ";" },
@@ -100,6 +106,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Normalizza e filtra record duplicati prima del load.",
     icon: "🧹",
     category: "etl",
+    tags: ["etl", "cleaning", "quality"],
     data: {
       component: "datapizza.etl.transform.clean",
       parameters: { dropNulls: true },
@@ -112,6 +119,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Scrive i dati trasformati su un data warehouse.",
     icon: "🏛️",
     category: "etl",
+    tags: ["etl", "warehouse", "load"],
     data: {
       component: "datapizza.etl.load.warehouse",
       parameters: { table: "analytics.events" },
@@ -124,6 +132,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Nodo iniziale cron per orchestrare pipeline complesse.",
     icon: "🕒",
     category: "orchestration",
+    tags: ["orchestration", "schedule", "cron"],
     data: {
       component: "datapizza.orchestrator.cron",
       parameters: { schedule: "0 * * * *" },
@@ -136,6 +145,7 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Attiva esecuzioni parallele su rami condizionali.",
     icon: "🌿",
     category: "orchestration",
+    tags: ["orchestration", "branch", "events"],
     data: {
       component: "datapizza.orchestrator.branch",
       parameters: { strategy: "fan-out" },
@@ -148,12 +158,97 @@ export const NODE_TEMPLATES: NodeTemplate[] = [
     description: "Invia notifiche Slack/Email a fine job.",
     icon: "📣",
     category: "orchestration",
+    tags: ["orchestration", "notification", "communication"],
     data: {
       component: "datapizza.orchestrator.notify",
       parameters: { channel: "#data-platform" },
     },
   },
 ];
+
+const normalizeText = (value: string): string =>
+  value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+
+export interface TemplateCatalogFilterState {
+  searchQuery: string;
+  selectedTags: string[];
+}
+
+const matchesSearch = (fields: string[], query: string): boolean => {
+  if (!query) {
+    return true;
+  }
+  const normalizedQuery = normalizeText(query);
+  return fields.some((field) => normalizeText(field).includes(normalizedQuery));
+};
+
+const matchesTags = (tags: string[], selectedTags: string[]): boolean => {
+  if (selectedTags.length === 0) {
+    return true;
+  }
+  const tagSet = new Set(tags.map((tag) => tag.toLowerCase()));
+  return selectedTags.every((tag) => tagSet.has(tag.toLowerCase()));
+};
+
+export const getWorkflowTemplateTags = (template: WorkflowTemplate): string[] => {
+  const tags = new Set<string>();
+  tags.add(template.category);
+  const metadataTags = template.definition.metadata.tags ?? [];
+  metadataTags.forEach((tag) => tags.add(tag));
+  return Array.from(tags);
+};
+
+export const getNodeTemplateTags = (template: NodeTemplate): string[] => {
+  const tags = new Set<string>();
+  tags.add(template.category);
+  template.tags?.forEach((tag) => tags.add(tag));
+  return Array.from(tags);
+};
+
+export function filterWorkflowTemplates(
+  templates: WorkflowTemplate[],
+  { searchQuery, selectedTags }: TemplateCatalogFilterState,
+): WorkflowTemplate[] {
+  return templates.filter((template) => {
+    const tags = getWorkflowTemplateTags(template);
+    const searchableFields = [template.name, template.description];
+    return matchesSearch(searchableFields, searchQuery) && matchesTags(tags, selectedTags);
+  });
+}
+
+export function filterNodeTemplates(
+  templates: NodeTemplate[],
+  { searchQuery, selectedTags }: TemplateCatalogFilterState,
+): NodeTemplate[] {
+  return templates.filter((template) => {
+    const tags = getNodeTemplateTags(template);
+    const searchableFields = [template.label, template.description];
+    return matchesSearch(searchableFields, searchQuery) && matchesTags(tags, selectedTags);
+  });
+}
+
+export function getTemplateCatalogTags(
+  templates: WorkflowTemplate[],
+  nodeTemplates: NodeTemplate[],
+): Map<string, number> {
+  const tagCount = new Map<string, number>();
+  const register = (tag: string) => {
+    const normalized = tag.toLowerCase();
+    tagCount.set(normalized, (tagCount.get(normalized) ?? 0) + 1);
+  };
+
+  templates.forEach((template) => {
+    getWorkflowTemplateTags(template).forEach(register);
+  });
+  nodeTemplates.forEach((template) => {
+    getNodeTemplateTags(template).forEach(register);
+  });
+
+  return tagCount;
+}
 
 const createTemplateDefinition = (
   metadata: WorkflowMetadata,
@@ -419,8 +514,10 @@ export const WORKFLOW_TEMPLATE_CATEGORIES: Record<
   },
 };
 
-export function groupNodeTemplatesByCategory(): Record<WorkflowTemplateCategory, NodeTemplate[]> {
-  return NODE_TEMPLATES.reduce<Record<WorkflowTemplateCategory, NodeTemplate[]>>(
+export function groupNodeTemplatesByCategory(
+  templates: NodeTemplate[] = NODE_TEMPLATES,
+): Record<WorkflowTemplateCategory, NodeTemplate[]> {
+  return templates.reduce<Record<WorkflowTemplateCategory, NodeTemplate[]>>(
     (accumulator, template) => {
       const bucket = accumulator[template.category] ?? [];
       bucket.push(template);
