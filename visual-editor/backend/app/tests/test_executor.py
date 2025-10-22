@@ -1,10 +1,13 @@
 import sys
+import json
 import types
 from datetime import datetime
 
 import pytest
 
-from app.executor import DatapizzaWorkflowExecutor
+import httpx
+
+from app.executor import DatapizzaWorkflowExecutor, RemoteExecutionError, RemoteWorkflowExecutor
 from app.models import (
     WorkflowDefinition,
     WorkflowNodeDefinition,
@@ -165,3 +168,70 @@ def test_executor_reports_missing_upstream_results(monkeypatch):
     assert result.status == "failure"
     assert result.steps[-1].status == "failed"
     assert "missing upstream results" in result.steps[-1].details
+
+
+def test_remote_executor_success(monkeypatch):
+    payload = {
+        "runId": "remote-123",
+        "status": "success",
+        "steps": [
+            {"nodeId": "task-1", "status": "completed", "details": "ok"}
+        ],
+        "outputs": {"results": {"task": {"task-1": {"echo": "remote"}}}},
+    }
+
+    request = httpx.Request("POST", "https://example.com/workflow/execute")
+    response = httpx.Response(
+        status_code=200,
+        content=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        request=request,
+    )
+    monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: response)
+
+    executor = RemoteWorkflowExecutor(
+        execution_url="https://example.com/workflow/execute"
+    )
+
+    node = WorkflowNodeDefinition(
+        id="task-1",
+        kind="task",
+        label="Task",
+        position=WorkflowPoint(x=0, y=0),
+        data={"component": "datapizza.tests.Component", "parameters": {}},
+    )
+
+    result = executor.run(make_workflow([node]))
+
+    assert result.status == "success"
+    assert result.runId == payload["runId"]
+    assert result.outputs["results"]["task"]["task-1"]["echo"] == "remote"
+
+
+def test_remote_executor_http_error(monkeypatch):
+    request = httpx.Request("POST", "https://example.com/workflow/execute")
+    response = httpx.Response(
+        status_code=502,
+        content=b"{}",
+        request=request,
+    )
+
+    def fake_post(*args, **kwargs):
+        return response
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    executor = RemoteWorkflowExecutor(
+        execution_url="https://example.com/workflow/execute"
+    )
+
+    node = WorkflowNodeDefinition(
+        id="task-1",
+        kind="task",
+        label="Task",
+        position=WorkflowPoint(x=0, y=0),
+        data={"component": "datapizza.tests.Component", "parameters": {}},
+    )
+
+    with pytest.raises(RemoteExecutionError):
+        executor.run(make_workflow([node]))
