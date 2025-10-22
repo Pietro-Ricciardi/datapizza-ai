@@ -2,6 +2,39 @@
 
 Il backend in `visual-editor/backend/app` espone gli endpoint di import, validazione ed esecuzione descritti in `main.py`, inclusa l'invocazione del nuovo `DatapizzaWorkflowExecutor`. I payload sono validati con i modelli Pydantic definiti in `models.py`, garantendo le stesse regole applicate dal frontend TypeScript (`visual-editor/src/workflow-format.ts`).【F:visual-editor/backend/app/main.py†L9-L161】【F:visual-editor/backend/app/models.py†L30-L343】【F:visual-editor/src/workflow-format.ts†L18-L148】
 
+## Setup locale
+
+### Ambiente virtuale
+
+```bash
+cd visual-editor/backend
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+```
+
+Per includere gli strumenti di sviluppo (pytest) installare il profilo esteso:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+### Avvio del server di sviluppo
+
+```bash
+make dev
+```
+
+Il comando esegue `uvicorn app.main:app --reload` mantenendo la natura standalone del progetto.【F:visual-editor/backend/Makefile†L1-L4】
+
+### Suite di test
+
+```bash
+pytest app/tests
+```
+
+I test coprono il loader dinamico (`resolve_component`, `normalise_parameters`, `normalise_result`), la gestione degli errori dell'esecutore e un caso di integrazione reale che invoca `datapizza.modules.parsers.text_parser.parse_text` per validare il parsing di nodi `Node` restituiti dai moduli core.【F:visual-editor/backend/app/tests/test_loader.py†L1-L120】【F:visual-editor/backend/app/tests/test_executor.py†L1-L132】【F:visual-editor/backend/app/tests/test_workflow_integration.py†L1-L36】 La suite richiede l'installazione delle dipendenze Datapizza presenti in `requirements.txt` e degli strumenti di test definiti in `requirements-dev.txt`.
+
 ## Configurazione runtime
 
 `app/settings.py` introduce `AppSettings`, un sistema di configurazione basato su Pydantic `BaseSettings` che centralizza la risoluzione di percorsi, variabili d'ambiente e credenziali usate dai moduli Datapizza.【F:visual-editor/backend/app/settings.py†L1-L153】 Le variabili possono essere definite in un file `.env` oppure tramite ambiente e includono:

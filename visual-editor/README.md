@@ -40,6 +40,48 @@ npm run test
 
 La suite utilizza [Vitest](https://vitest.dev/) per verificare la serializzazione dei workflow e la compatibilità con React Flow.
 
+### Backend FastAPI
+
+Il backend vive in `visual-editor/backend` ed è pensato per essere avviato e testato in autonomia rispetto al frontend. Per evitarne la contaminazione con il resto del repository si consiglia di utilizzare un ambiente virtuale dedicato.
+
+#### Requisiti Python
+
+- Python 3.10 o superiore
+- `pip`
+
+#### Creazione dell'ambiente virtuale
+
+```bash
+cd visual-editor/backend
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+```
+
+Per includere anche gli strumenti di test installare il profilo esteso:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+#### Avvio del backend di sviluppo
+
+```bash
+cd visual-editor/backend
+make dev
+```
+
+Il comando esegue `uvicorn app.main:app --reload` e rende disponibili gli endpoint documentati tramite Swagger UI su `http://127.0.0.1:8000/docs`.
+
+#### Test backend
+
+```bash
+cd visual-editor/backend
+pytest app/tests
+```
+
+La suite Python copre il loader dinamico e l'esecutore, verificando l'import dei componenti, la propagazione degli errori e la forma dei risultati normalizzati, oltre a un test d'integrazione che invoca i moduli Datapizza reali.【F:visual-editor/backend/app/tests/test_loader.py†L1-L120】【F:visual-editor/backend/app/tests/test_executor.py†L1-L132】【F:visual-editor/backend/app/tests/test_workflow_integration.py†L1-L46】
+
 ## Gestione dello stato con Zustand
 
 Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizzato nello store definito in `src/store/workflow-store.ts`. Lo store espone azioni dedicate per l'inizializzazione del canvas, l'applicazione dei cambiamenti provenienti da React Flow e la creazione automatica di connessioni `smoothstep` animate. Questo approccio evita la duplicazione della logica di aggiornamento e rende più semplice estendere il workflow editor con pannelli di configurazione o controlli esterni al canvas.
@@ -274,58 +316,16 @@ Le utility `toReactFlowGraph` e `fromReactFlowGraph` garantiscono la compatibili
 2. Propagare le nuove proprietà alle utility di conversione (incluso `src/workflow-serialization.ts`).
 3. Documentare le modifiche aggiornando esempi JSON/YAML e test correlati.
 
-## Backend FastAPI per import/export
+## Creare nuovi nodi compatibili con l'esecutore
 
-Per sperimentare l'integrazione con Datapizza AI è disponibile un backend leggero
-in `visual-editor/backend/` che espone endpoint REST di validazione ed
-esecuzione mock dei workflow.
+Per aggiungere componenti custom da utilizzare nel visual editor è sufficiente rispettare alcune convenzioni condivise tra frontend e backend:
 
-### Requisiti backend
+1. Esportare la classe o funzione nel namespace `datapizza.*` in modo che il loader possa importarla dinamicamente con sicurezza.【F:visual-editor/backend/app/runtime/loader.py†L20-L49】
+2. Rendere il componente invocabile (funzione, classe con `__call__` oppure classe instanziabile) e accettare parametri sotto forma di mappatura; l'esecutore inietterà automaticamente `parameters`, `inputs`, `context` e `payload` quando presenti nella firma.【F:visual-editor/backend/app/runtime/loader.py†L74-L116】【F:visual-editor/backend/app/executor.py†L117-L161】
+3. Restituire oggetti facilmente serializzabili: dizionari, liste, dataclass, modelli Pydantic o oggetti con metodo `.dict()`/`.model_dump()`. Qualsiasi altro tipo verrà convertito a stringa dal normalizzatore, quindi è consigliabile controllare a test che i dati risultanti rispettino il formato atteso dal frontend.【F:visual-editor/backend/app/runtime/loader.py†L51-L72】【F:visual-editor/backend/app/runtime/loader.py†L89-L110】
+4. In caso di nuove dipendenze Python ricordarsi di aggiornarle nei requisiti del backend (runtime o dev) e di documentarle per mantenere l'app standalone.【F:visual-editor/backend/requirements.txt†L1-L13】【F:visual-editor/backend/requirements-dev.txt†L1-L2】
 
-- Python >= 3.10
-
-### Installazione dipendenze
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Avvio server FastAPI
-
-```bash
-uvicorn app.main:app --reload
-```
-
-È disponibile anche un target `make dev` nella directory `backend/` che
-avvia `uvicorn` con le stesse opzioni.
-
-Il server viene esposto per default su `http://127.0.0.1:8000`. In ambiente di
-sviluppo è possibile configurare `uvicorn` con l'opzione `--host 0.0.0.0` per
-consentire l'accesso dal frontend in esecuzione all'interno di container.
-
-### Endpoint disponibili
-
-- `GET /workflow/schema`: restituisce lo schema JSON del formato supportato.
-- `POST /workflow/validate`: valida un workflow e ritorna l'esito con elenco
-  degli eventuali problemi riscontrati.
-- `POST /workflow/import`: normalizza e restituisce il workflow ricevuto dal
-  frontend.
-- `POST /workflow/export`: consente di serializzare un workflow prima di
-  persisterlo o inviarlo ad altri servizi.
-- `POST /workflow/execute`: esegue un run mock tramite il motore integrato e
-  restituisce una traccia dei nodi eseguiti.
-
-Ogni endpoint accetta e restituisce payload coerenti con le interfacce
-TypeScript presenti in `src/workflow-format.ts`. La validazione server-side
-assicurata dai modelli Pydantic evita la propagazione di workflow inconsistenti
-verso servizi esterni. Oltre alla definizione del workflow, il file esporta
-anche i tipi `WorkflowValidationResponse`, `WorkflowExecutionResult` e
-`WorkflowSchemaResponse` che descrivono le risposte fornite dagli endpoint di
-validazione, esecuzione e introspezione dello schema.
-
+Seguendo queste regole i nodi aggiuntivi potranno essere orchestrati dal `DatapizzaWorkflowExecutor` senza interventi extra sul backend FastAPI.【F:visual-editor/backend/app/executor.py†L23-L204】 I test presenti nella cartella `backend/app/tests` forniscono esempi pratici su come serializzare i risultati e gestire errori di caricamento/invocazione.【F:visual-editor/backend/app/tests/test_loader.py†L1-L120】【F:visual-editor/backend/app/tests/test_executor.py†L1-L132】【F:visual-editor/backend/app/tests/test_workflow_integration.py†L1-L46】
 
 ## Note operative
 - Il visual editor deve rimanere **standalone** e non condividere configurazioni con il resto del repository.
