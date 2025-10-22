@@ -156,6 +156,15 @@ Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizz
 
 La sidebar ospita un inspector contestuale che si attiva selezionando un nodo nel canvas. Il componente `NodeInspector` (`src/components/NodeInspector.tsx`) consente di modificare label, tipo logico e parametri JSON del nodo con validazione di base direttamente collegata allo store Zustand. Le azioni `updateNodeLabel`, `updateNodeKind` e `updateNodeParameters` mantengono l'immutabilità dello stato e garantiscono che la serializzazione (`src/workflow-serialization.ts`) produca sempre workflow coerenti con il formato supportato.
 
+#### Aggiungere nuovi schemi di validazione
+
+I parametri dei componenti vengono verificati tramite [Ajv](https://ajv.js.org/) sfruttando la mappa `COMPONENT_SCHEMAS` definita in `src/data/component-schemas.ts`. Per estendere la copertura:
+
+1. Inserisci un nuovo schema JSON nella mappa usando la sintassi Draft 7 supportata da Ajv (es. campi obbligatori, limiti numerici, `additionalProperties`).
+2. Mantieni descrizioni concise degli errori: il modulo `src/services/workflow-validation.ts` formatterà automaticamente i messaggi per l'interfaccia e per i test.
+3. Aggiungi, se necessario, casi di test dedicati in `src/components/__tests__/NodeInspector.test.tsx` per coprire i nuovi percorsi di validazione e l'eventuale propagazione degli errori.
+4. Esegui `npm test` per assicurarti che la validazione passi e che i messaggi siano mostrati correttamente nell'inspector.
+
 ## Validazione in tempo reale del grafo
 
 Lo store include ora uno stato di validazione (`validation`) che tiene traccia dei problemi correnti del workflow e viene aggiornato automaticamente ad ogni modifica di nodi, archi o metadati. Il modulo `src/services/workflow-validation.ts` analizza struttura del grafo e metadata producendo errori/avvisi, suggerendo quick-fix contestuali (es. creazione di connessioni mancanti, etichette di default, parametri placeholder) utilizzabili direttamente dalla sidebar.

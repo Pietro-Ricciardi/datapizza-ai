@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import type { Node } from "reactflow";
 import { type WorkflowNodeKind } from "../workflow-format";
 import { useWorkflowStore, workflowSelectors } from "../store/workflow-store";
+import { validateComponentParameters } from "../services/workflow-validation";
 
 type NodeInspectorProps = {
   node: Node;
@@ -73,6 +74,7 @@ export function NodeInspector({ node }: NodeInspectorProps): JSX.Element {
   const updateNodeLabel = useWorkflowStore(workflowSelectors.updateNodeLabel);
   const updateNodeKind = useWorkflowStore(workflowSelectors.updateNodeKind);
   const updateNodeParameters = useWorkflowStore(workflowSelectors.updateNodeParameters);
+  const nodeValidationErrors = useWorkflowStore(workflowSelectors.nodeValidationErrors);
 
   const [label, setLabel] = useState(() => getNodeLabel(node));
   const [labelError, setLabelError] = useState<FieldError>();
@@ -81,6 +83,14 @@ export function NodeInspector({ node }: NodeInspectorProps): JSX.Element {
     formatParameters((node.data as Record<string, unknown> | undefined)?.parameters),
   );
   const [parametersError, setParametersError] = useState<FieldError>();
+
+  const schemaErrors = useMemo(() => {
+    const errors = nodeValidationErrors[node.id];
+    if (!errors || errors.length === 0) {
+      return undefined;
+    }
+    return `Parametri non validi: ${errors.join(" ")}`;
+  }, [node.id, nodeValidationErrors]);
 
   const component = useMemo(() => {
     const data = node.data as Record<string, unknown> | undefined;
@@ -118,12 +128,19 @@ export function NodeInspector({ node }: NodeInspectorProps): JSX.Element {
   const handleParametersBlur = () => {
     try {
       const parsed = parseParameters(parametersSource);
+      if (component) {
+        const validation = validateComponentParameters(component, parsed ?? {});
+        if (!validation.valid) {
+          setParametersError(`Parametri non validi: ${validation.errors.join(" ")}`);
+          return;
+        }
+      }
       setParametersError(undefined);
       updateNodeParameters(node.id, parsed);
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Parametri non validi: verificare il JSON.";
-      setParametersError(message);
+      const detail =
+        error instanceof Error && error.message ? error.message : "verificare il JSON.";
+      setParametersError(`Parametri non validi: ${detail}`);
     }
   };
 
@@ -183,8 +200,10 @@ export function NodeInspector({ node }: NodeInspectorProps): JSX.Element {
             rows={8}
           />
         </label>
-        {parametersError ? (
-          <p className="inline-feedback inline-feedback--error">{parametersError}</p>
+        {parametersError || schemaErrors ? (
+          <p className="inline-feedback inline-feedback--error">
+            {parametersError ?? schemaErrors}
+          </p>
         ) : null}
       </div>
     </div>
