@@ -1,4 +1,5 @@
 # Datapizza Visual Editor
+## by Pietro Ricciardi
 
 Interfaccia web dedicata alla creazione visuale dei workflow Datapizza. Il progetto vive come applicazione standalone all'interno di questa cartella e può essere sviluppato in autonomia rispetto al resto del repository.
 
