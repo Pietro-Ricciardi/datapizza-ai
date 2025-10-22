@@ -39,6 +39,12 @@ import {
 } from "./services/workflow-api";
 import { NodeInspector } from "./components/NodeInspector";
 import {
+  InputValidationNode,
+  OutputValidationNode,
+  TaskValidationNode,
+  type ValidationNodeData,
+} from "./components/ValidationNode";
+import {
   NODE_TEMPLATES,
   WORKFLOW_TEMPLATES,
   WORKFLOW_TEMPLATE_CATEGORIES,
@@ -91,6 +97,12 @@ interface ValidationState {
   issues: string[];
   message?: string;
 }
+
+type NodeValidationSummary = {
+  severity: "error" | "warning";
+  count: number;
+  messages: string[];
+};
 
 type ImportWorkflowDialogProps = {
   open: boolean;
@@ -455,6 +467,8 @@ function WorkflowApp(): JSX.Element {
   const completeExecution = useWorkflowStore((state) => state.completeExecution);
   const failExecution = useWorkflowStore((state) => state.failExecution);
   const resetExecution = useWorkflowStore((state) => state.resetExecution);
+  const validation = useWorkflowStore((state) => state.validation);
+  const setValidationMetadataStore = useWorkflowStore((state) => state.setValidationMetadata);
 
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -497,6 +511,50 @@ function WorkflowApp(): JSX.Element {
   const [importError, setImportError] = useState<string | undefined>(undefined);
   const [validationState, setValidationState] = useState<ValidationState>({ status: "idle", issues: [] });
 
+  const nodeValidationSummaries = useMemo(() => {
+    const summaries = new Map<string, NodeValidationSummary>();
+
+    validation.issues.forEach((issue) => {
+      if (issue.scope !== "node" || !issue.targetId) {
+        return;
+      }
+
+      const current = summaries.get(issue.targetId);
+      const severity: NodeValidationSummary["severity"] =
+        current?.severity === "error" || issue.severity === "error" ? "error" : "warning";
+      const messages = current ? [...current.messages, issue.message] : [issue.message];
+      const count = (current?.count ?? 0) + 1;
+
+      summaries.set(issue.targetId, { severity, count, messages });
+    });
+
+    return summaries;
+  }, [validation.issues]);
+
+  const nodeTypes = useMemo(
+    () => ({
+      input: InputValidationNode,
+      default: TaskValidationNode,
+      output: OutputValidationNode,
+    }),
+    [],
+  );
+
+  const nodesForCanvas = useMemo(() => {
+    return nodes.map((node) => {
+      const summary = nodeValidationSummaries.get(node.id);
+      const baseData = { ...(node.data ?? {}) } as ValidationNodeData;
+
+      if (summary) {
+        baseData.validationSummary = summary;
+      } else if ("validationSummary" in baseData) {
+        delete baseData.validationSummary;
+      }
+
+      return { ...node, data: baseData };
+    });
+  }, [nodes, nodeValidationSummaries]);
+
   useEffect(() => {
     if (typeof document !== "undefined") {
       document.documentElement.dataset.theme = theme;
@@ -531,6 +589,7 @@ function WorkflowApp(): JSX.Element {
     (template: WorkflowTemplate) => {
       setTemplateSource("template");
       setWorkflowMetadata(template.definition.metadata);
+      setValidationMetadataStore(template.definition.metadata);
       setRuntimeEnvironment(template.runtimeDefaults?.environment ?? "");
       setDatasetUri(template.runtimeDefaults?.datasetUri ?? "");
       resetExecution();
@@ -558,6 +617,7 @@ function WorkflowApp(): JSX.Element {
       setRuntimeEnvironment,
       setViewport,
       setWorkflowMetadata,
+      setValidationMetadataStore,
       setTemplateSource,
       setValidationState,
       setImportError,
@@ -678,6 +738,7 @@ function WorkflowApp(): JSX.Element {
 
         const { workflow: migratedWorkflow, reactFlow } = initializeWorkflowStoreFromDefinition(definition);
         setWorkflowMetadata(migratedWorkflow.metadata);
+        setValidationMetadataStore(migratedWorkflow.metadata);
 
         const backendExtensions = migratedWorkflow.extensions?.backend;
         if (backendExtensions && typeof backendExtensions === "object") {
@@ -723,6 +784,7 @@ function WorkflowApp(): JSX.Element {
       resetExecution,
       setDatasetUri,
       setRuntimeEnvironment,
+      setValidationMetadataStore,
       setTemplateSource,
       setValidationState,
       setViewport,
@@ -853,15 +915,17 @@ function WorkflowApp(): JSX.Element {
       const step = execution.steps[node.id];
       const status = step?.status ?? (execution.loading ? "pending" : "idle");
       const label = statusLabels[status] ?? statusLabels.idle;
+      const validationSummary = nodeValidationSummaries.get(node.id);
       return {
         id: node.id,
         label: typeof node.data?.label === "string" ? node.data.label : node.id,
         status,
         labelText: label,
         details: step?.details,
+        validationSummary,
       };
     });
-  }, [nodes, execution.steps, execution.loading]);
+  }, [nodes, execution.steps, execution.loading, nodeValidationSummaries]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId),
@@ -1009,8 +1073,9 @@ function WorkflowApp(): JSX.Element {
             className="workflow-canvas"
             style={{ width: "100%", height: "100%" }}
             fitView
-            nodes={nodes}
+            nodes={nodesForCanvas}
             edges={edges}
+            nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
@@ -1081,52 +1146,119 @@ function WorkflowApp(): JSX.Element {
           <SidebarSection
             id="workflow-validation"
             title="Validazione workflow"
-            description="Verifica la definizione corrente con il backend FastAPI o con un fallback locale."
+            description="Monitora i problemi del grafo in tempo reale e avvia la validazione remota con il backend FastAPI."
           >
-            <div className="validation-actions">
-              <button
-                className="button button--ghost"
-                type="button"
-                onClick={validateWorkflow}
-                disabled={validationState.status === "loading"}
-              >
-                {validationState.status === "loading" ? "Validazione in corso..." : "Valida definizione"}
-              </button>
-            </div>
-            {validationState.status === "idle" ? (
-              <p className="muted-copy">
-                Avvia la validazione per ottenere un riepilogo degli eventuali problemi strutturali e semantici del workflow.
-              </p>
-            ) : validationState.status === "loading" ? (
-              <p className="muted-copy">Analisi della definizione in corso...</p>
-            ) : (
-              <div className="validation-result">
-                <p
-                  className={`inline-feedback ${
-                    validationState.valid ? "inline-feedback--success" : "inline-feedback--error"
-                  }`}
-                >
-                  {validationState.message ??
-                    (validationState.valid
-                      ? "La definizione è stata validata correttamente."
-                      : "La definizione contiene alcune incongruenze.")}
-                  {validationState.source ? (
-                    <span className="validation-result__source">
-                      {validationState.source === "remote"
-                        ? " (risposta backend)"
-                        : " (validator locale)"}
-                    </span>
-                  ) : null}
+            <section className="validation-panel">
+              <header className="validation-panel__header">
+                <h3>Analisi in tempo reale</h3>
+                <div className="validation-panel__summary">
+                  <span className="validation-pill validation-pill--error">
+                    Errori
+                    <strong>{validation.errors}</strong>
+                  </span>
+                  <span className="validation-pill validation-pill--warning">
+                    Avvisi
+                    <strong>{validation.warnings}</strong>
+                  </span>
+                </div>
+              </header>
+              {validation.issues.length === 0 ? (
+                <p className="muted-copy">
+                  Nessun problema rilevato sul grafo corrente. Collega i nodi o modifica i parametri per mantenere il workflow
+                  consistente.
                 </p>
-                {!validationState.valid && validationState.issues.length > 0 ? (
-                  <ul className="validation-issues">
-                    {validationState.issues.map((issue) => (
-                      <li key={issue}>{issue}</li>
-                    ))}
-                  </ul>
-                ) : null}
+              ) : (
+                <ul className="validation-issues-list">
+                  {validation.issues.map((issue) => (
+                    <li
+                      key={issue.id}
+                      className={`validation-issues-list__item validation-issues-list__item--${issue.severity}`}
+                    >
+                      <div className="validation-issues-list__content">
+                        <div className="validation-issues-list__title">
+                          <span className="validation-issues-list__badge" aria-hidden>
+                            {issue.severity === "error" ? "⛔" : "⚠️"}
+                          </span>
+                          <strong>
+                            {issue.scope === "workflow"
+                              ? "Workflow"
+                              : issue.scope === "edge"
+                              ? `Arco ${issue.targetId ?? "sconosciuto"}`
+                              : `Nodo ${issue.targetId ?? "sconosciuto"}`}
+                          </strong>
+                        </div>
+                        <p className="validation-issues-list__message">{issue.message}</p>
+                        {issue.description ? (
+                          <p className="validation-issues-list__hint">{issue.description}</p>
+                        ) : null}
+                      </div>
+                      {issue.quickFixes && issue.quickFixes.length > 0 ? (
+                        <div className="validation-issues-list__actions">
+                          {issue.quickFixes.map((fix) => (
+                            <button
+                              key={fix.id}
+                              type="button"
+                              className="button button--ghost validation-issues-list__fix"
+                              onClick={fix.apply}
+                            >
+                              {fix.label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <div className="validation-divider" role="presentation" />
+            <section className="validation-panel">
+              <header className="validation-panel__header">
+                <h3>Validazione remota</h3>
+              </header>
+              <div className="validation-actions">
+                <button
+                  className="button button--ghost"
+                  type="button"
+                  onClick={validateWorkflow}
+                  disabled={validationState.status === "loading"}
+                >
+                  {validationState.status === "loading" ? "Validazione in corso..." : "Valida definizione"}
+                </button>
               </div>
-            )}
+              {validationState.status === "idle" ? (
+                <p className="muted-copy">
+                  Avvia la validazione per ottenere un riepilogo degli eventuali problemi strutturali e semantici del workflow.
+                </p>
+              ) : validationState.status === "loading" ? (
+                <p className="muted-copy">Analisi della definizione in corso...</p>
+              ) : (
+                <div className="validation-result">
+                  <p
+                    className={`inline-feedback ${
+                      validationState.valid ? "inline-feedback--success" : "inline-feedback--error"
+                    }`}
+                  >
+                    {validationState.message ??
+                      (validationState.valid
+                        ? "La definizione è stata validata correttamente."
+                        : "La definizione contiene alcune incongruenze.")}
+                    {validationState.source ? (
+                      <span className="validation-result__source">
+                        {validationState.source === "remote" ? " (risposta backend)" : " (validator locale)"}
+                      </span>
+                    ) : null}
+                  </p>
+                  {!validationState.valid && validationState.issues.length > 0 ? (
+                    <ul className="validation-issues">
+                      {validationState.issues.map((issue) => (
+                        <li key={issue}>{issue}</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              )}
+            </section>
           </SidebarSection>
           <SidebarSection
             id="workflow-runner"
@@ -1211,6 +1343,15 @@ function WorkflowApp(): JSX.Element {
                       {node.labelText}
                     </span>
                   </div>
+                  {node.validationSummary ? (
+                    <div
+                      className={`status-list__validation status-list__validation--${node.validationSummary.severity}`}
+                      title={node.validationSummary.messages.join("\n")}
+                    >
+                      {node.validationSummary.severity === "error" ? "Problemi critici" : "Avvisi"}
+                      <span className="status-list__validation-count">{node.validationSummary.count}</span>
+                    </div>
+                  ) : null}
                   {node.details ? (
                     <p className="status-list__details">{node.details}</p>
                   ) : null}

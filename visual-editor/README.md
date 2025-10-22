@@ -128,6 +128,14 @@ Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizz
 
 La sidebar ospita un inspector contestuale che si attiva selezionando un nodo nel canvas. Il componente `NodeInspector` (`src/components/NodeInspector.tsx`) consente di modificare label, tipo logico e parametri JSON del nodo con validazione di base direttamente collegata allo store Zustand. Le azioni `updateNodeLabel`, `updateNodeKind` e `updateNodeParameters` mantengono l'immutabilità dello stato e garantiscono che la serializzazione (`src/workflow-serialization.ts`) produca sempre workflow coerenti con il formato supportato.
 
+## Validazione in tempo reale del grafo
+
+Lo store include ora uno stato di validazione (`validation`) che tiene traccia dei problemi correnti del workflow e viene aggiornato automaticamente ad ogni modifica di nodi, archi o metadati. Il modulo `src/services/workflow-validation.ts` analizza struttura del grafo e metadata producendo errori/avvisi, suggerendo quick-fix contestuali (es. creazione di connessioni mancanti, etichette di default, parametri placeholder) utilizzabili direttamente dalla sidebar.
+
+- I nodi del canvas sono renderizzati tramite componenti dedicati (`src/components/ValidationNode.tsx`) e mostrano badge visivi con tooltip descrittivi in caso di warning/errori.
+- La sezione "Validazione workflow" in `App.tsx` elenca i problemi in tempo reale, permette di applicare i quick-fix e mantiene l'integrazione con la validazione remota esposta dal backend FastAPI.
+- La lista "Stato dei nodi" mette in evidenza eventuali criticità con badge dedicati per facilitare il monitoraggio durante l'esecuzione.
+
 ## Workflow graph con React Flow
 
 L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Il grafo iniziale coincide con il template `ml-standard-pipeline` definito in `src/data/workflow-templates.ts`, ma può essere sostituito scegliendo un template differente dal catalogo o aggiungendo nuove definizioni allo stesso file. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto. `initializeWorkflowStoreFromDefinition` restituisce l'intero stato React Flow persistito nelle estensioni (viewport, pannelli, ecc.), mentre `serializeWorkflowFromStore` accetta un oggetto `reactFlow` opzionale per sovrascrivere o aggiungere nuove preferenze dell'interfaccia al momento dell'export.
