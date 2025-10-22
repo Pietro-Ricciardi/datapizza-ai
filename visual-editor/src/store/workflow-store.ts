@@ -10,6 +10,7 @@ import {
   type NodeChange,
 } from "reactflow";
 import {
+  type WorkflowNodeKind,
   type WorkflowExecutionResult,
   type WorkflowExecutionResultStatus,
   type WorkflowExecutionStep,
@@ -18,6 +19,7 @@ import {
 type WorkflowState = {
   nodes: Node[];
   edges: Edge[];
+  selectedNodeId?: string;
 };
 
 type WorkflowActions = {
@@ -27,6 +29,13 @@ type WorkflowActions = {
   onNodesChange: (changes: NodeChange[]) => void;
   onEdgesChange: (changes: EdgeChange[]) => void;
   onConnect: (connection: Connection | Edge) => void;
+  selectNode: (nodeId: string | undefined) => void;
+  updateNodeLabel: (nodeId: string, label: string) => void;
+  updateNodeKind: (nodeId: string, kind: WorkflowNodeKind) => void;
+  updateNodeParameters: (
+    nodeId: string,
+    parameters: Record<string, unknown> | undefined,
+  ) => void;
 };
 
 type WorkflowExecutionStatus = WorkflowExecutionResultStatus | "idle";
@@ -65,18 +74,35 @@ export const useWorkflowStore = create<
 >((set) => ({
   nodes: [],
   edges: [],
+  selectedNodeId: undefined,
   execution: createDefaultExecutionState(),
   initialize: (nodes, edges) =>
     set({
       nodes: nodes.map((node) => ({ ...node })),
       edges: edges.map((edge) => ({ ...edge })),
+      selectedNodeId: undefined,
     }),
-  setNodes: (nodes) => set({ nodes: nodes.map((node) => ({ ...node })) }),
+  setNodes: (nodes) =>
+    set((state) => ({
+      nodes: nodes.map((node) => ({ ...node })),
+      selectedNodeId: state.selectedNodeId &&
+        nodes.some((node) => node.id === state.selectedNodeId)
+        ? state.selectedNodeId
+        : undefined,
+    })),
   setEdges: (edges) => set({ edges: edges.map((edge) => ({ ...edge })) }),
   onNodesChange: (changes) =>
-    set((state) => ({
-      nodes: applyNodeChanges(changes, state.nodes),
-    })),
+    set((state) => {
+      const nextNodes = applyNodeChanges(changes, state.nodes);
+      const selectionStillValid =
+        state.selectedNodeId !== undefined &&
+        nextNodes.some((node) => node.id === state.selectedNodeId);
+
+      return {
+        nodes: nextNodes,
+        selectedNodeId: selectionStillValid ? state.selectedNodeId : undefined,
+      };
+    }),
   onEdgesChange: (changes) =>
     set((state) => ({
       edges: applyEdgeChanges(changes, state.edges),
@@ -90,6 +116,46 @@ export const useWorkflowStore = create<
           animated: true,
         },
         state.edges,
+      ),
+    })),
+  selectNode: (nodeId) =>
+    set(() => ({
+      selectedNodeId: nodeId,
+    })),
+  updateNodeLabel: (nodeId, label) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: {
+                ...(node.data ?? {}),
+                label,
+              },
+            }
+          : node,
+      ),
+    })),
+  updateNodeKind: (nodeId, kind) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              type: mapWorkflowKindToNodeType(kind),
+            }
+          : node,
+      ),
+    })),
+  updateNodeParameters: (nodeId, parameters) =>
+    set((state) => ({
+      nodes: state.nodes.map((node) =>
+        node.id === nodeId
+          ? {
+              ...node,
+              data: updateNodeParametersData(node.data, parameters),
+            }
+          : node,
       ),
     })),
   startExecution: () =>
@@ -142,3 +208,37 @@ export const useWorkflowStore = create<
     })),
   resetExecution: () => set({ execution: createDefaultExecutionState() }),
 }));
+
+function mapWorkflowKindToNodeType(kind: WorkflowNodeKind): Node["type"] {
+  switch (kind) {
+    case "input":
+      return "input";
+    case "output":
+      return "output";
+    default:
+      return "default";
+  }
+}
+
+function updateNodeParametersData(
+  data: Node["data"] | undefined,
+  parameters: Record<string, unknown> | undefined,
+): Node["data"] {
+  const baseData = { ...((data ?? {}) as Record<string, unknown>) };
+
+  if (parameters === undefined) {
+    delete baseData.parameters;
+    return baseData;
+  }
+
+  baseData.parameters = cloneSerializable(parameters);
+  return baseData;
+}
+
+function cloneSerializable<T>(value: T): T {
+  if (value === undefined) {
+    return value;
+  }
+
+  return JSON.parse(JSON.stringify(value)) as T;
+}

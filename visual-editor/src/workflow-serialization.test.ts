@@ -60,7 +60,7 @@ const workflow: WorkflowDefinition = {
 };
 
 beforeEach(() => {
-  useWorkflowStore.setState({ nodes: [], edges: [] });
+  useWorkflowStore.setState({ nodes: [], edges: [], selectedNodeId: undefined });
 });
 
 describe("workflow-serialization", () => {
@@ -166,6 +166,36 @@ describe("workflow-serialization", () => {
           description: "Dataset grezzo",
         },
       },
+    });
+  });
+
+  it("mantiene coerenti le modifiche ai nodi effettuate tramite lo store", () => {
+    initializeWorkflowStoreFromDefinition(workflow);
+
+    const { updateNodeLabel, updateNodeKind, updateNodeParameters } =
+      useWorkflowStore.getState();
+
+    updateNodeLabel("process", "Processo validato");
+    updateNodeKind("process", "output");
+    updateNodeParameters("process", {
+      threshold: 0.75,
+      metadata: { stage: "validation" },
+    });
+
+    const snapshot = serializeWorkflowFromStore({
+      metadata: workflow.metadata,
+      version: workflow.version,
+    });
+
+    const processNode = snapshot.nodes.find((node) => node.id === "process");
+    expect(processNode).toBeDefined();
+    expect(processNode).toMatchObject({
+      label: "Processo validato",
+      kind: "output",
+    });
+    expect(processNode?.data?.parameters).toEqual({
+      threshold: 0.75,
+      metadata: { stage: "validation" },
     });
   });
 });

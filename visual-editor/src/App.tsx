@@ -15,6 +15,7 @@ import {
 } from "./workflow-serialization";
 import { createResourceReference } from "./workflow-parameters";
 import { executeWorkflow, WorkflowApiError } from "./services/workflow-api";
+import { NodeInspector } from "./components/NodeInspector";
 
 type ThemeMode = "light" | "dark";
 
@@ -148,6 +149,8 @@ function App(): JSX.Element {
   const onNodesChange = useWorkflowStore((state) => state.onNodesChange);
   const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange);
   const onConnect = useWorkflowStore((state) => state.onConnect);
+  const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
+  const selectNode = useWorkflowStore((state) => state.selectNode);
   const execution = useWorkflowStore((state) => state.execution);
   const startExecution = useWorkflowStore((state) => state.startExecution);
   const completeExecution = useWorkflowStore((state) => state.completeExecution);
@@ -228,6 +231,11 @@ function App(): JSX.Element {
     });
   }, [nodes, execution.steps, execution.loading]);
 
+  const selectedNode = useMemo(
+    () => nodes.find((node) => node.id === selectedNodeId),
+    [nodes, selectedNodeId],
+  );
+
   const runWorkflow = useCallback(async () => {
     startExecution();
 
@@ -293,6 +301,11 @@ function App(): JSX.Element {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onSelectionChange={({ nodes: nextNodes }) => {
+              const nextSelected = nextNodes[0];
+              selectNode(nextSelected ? nextSelected.id : undefined);
+            }}
+            onPaneClick={() => selectNode(undefined)}
             proOptions={{ hideAttribution: true }}
           >
             <MiniMap zoomable pannable />
@@ -355,6 +368,20 @@ function App(): JSX.Element {
                 </div>
               ) : null}
             </dl>
+          </SidebarSection>
+
+          <SidebarSection
+            id="node-details"
+            title="Dettagli nodo"
+            description="Seleziona un nodo dal canvas per modificarne label, tipo e parametri JSON."
+          >
+            {selectedNode ? (
+              <NodeInspector node={selectedNode} />
+            ) : (
+              <p className="muted-copy">
+                Nessun nodo selezionato. Clicca su un nodo nel canvas per visualizzare i dettagli.
+              </p>
+            )}
           </SidebarSection>
 
           <SidebarSection title="Stato dei nodi">
