@@ -243,7 +243,7 @@ class WorkflowValidationResponse(BaseModel):
 
 class WorkflowExecutionStep(BaseModel):
     nodeId: str
-    status: Literal["pending", "running", "completed"]
+    status: Literal["pending", "running", "completed", "failed"]
     details: Optional[str] = None
 
 

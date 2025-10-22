@@ -112,7 +112,7 @@ Per collegare i nodi a componenti Python si consiglia di usare un oggetto `data`
 
 #### Risultati di esecuzione (`WorkflowExecutionResult`)
 
-L'esecutore mock restituisce un identificativo di run, lo stato aggregato e i dettagli passo-passo. Il campo `outputs` è un dizionario serializzabile che può contenere risultati strutturati (es. snapshot dei nodi o payload prodotti dai componenti Python).【F:visual-editor/src/workflow-format.ts†L136-L148】【F:visual-editor/backend/app/models.py†L244-L258】 I consumer dovrebbero mantenere chiavi stabili (ad esempio `nodeOutputs` o `artifacts`) per facilitare la re-idratazione lato frontend.
+Il backend ora utilizza `DatapizzaWorkflowExecutor`, un motore che risolve dinamicamente i componenti Python del namespace `datapizza` e orchestra il ciclo `input → task → output` con gestione di timeout e log dedicati.【F:visual-editor/backend/app/executor.py†L1-L203】 Ogni nodo produce uno `step` con stato `completed` o `failed`; in caso di errori l'esecutore restituisce messaggi leggibili per facilitare il debug.【F:visual-editor/backend/app/executor.py†L37-L125】 Il campo `outputs` contiene `completedAt` e i risultati normalizzati dei nodi raggruppati per ruolo (`input`, `task`, `output`), pronti per essere serializzati e consumati dal frontend.【F:visual-editor/backend/app/executor.py†L167-L204】 I consumer dovrebbero mantenere chiavi stabili (ad esempio `nodeOutputs` o `artifacts`) per facilitare la re-idratazione lato frontend.
 
 ### Esempio JSON
 
