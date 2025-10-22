@@ -58,6 +58,62 @@ Il visual editor espone un formato di serializzazione pensato per essere esporta
 - `edges`: collegamenti direzionali tra nodi con eventuali metadati (es. etichette, riferimenti a porte specifiche).
 - `extensions`: spazio opzionale per impostazioni di frontend e backend. Le estensioni correnti includono `reactFlow` (viewport, stato pannelli, preferenze di snapping) per ripristinare l'interfaccia e `backend` per passare suggerimenti all'esecutore.
 
+### Dettaglio attributi e vincoli di validazione
+
+Il file `src/workflow-format.ts` espone l'elenco dei campi serializzati mentre il backend FastAPI li convalida tramite i modelli Pydantic in `backend/app/models.py`. Le tabelle seguenti riassumono i campi obbligatori e opzionali con le rispettive regole.
+
+#### Metadata (`WorkflowMetadata`)
+
+| Campo | Obbligatorio | Tipo | Note |
+| --- | --- | --- | --- |
+| `name` | Sì | string | Deve essere non vuota sia lato frontend che backend.【F:visual-editor/src/workflow-format.ts†L18-L28】【F:visual-editor/backend/app/models.py†L30-L57】 |
+| `description` | No | string | Testo descrittivo libero. |
+| `tags` | No | string[] | Il backend vieta valori vuoti o composti da spazi.【F:visual-editor/backend/app/models.py†L59-L63】 |
+| `author` | No | oggetto | Se presente richiede `name` non vuoto e opzionalmente `email` valida.【F:visual-editor/backend/app/models.py†L12-L24】 |
+| `externalId`, `createdAt`, `updatedAt` | No | string | Identificativi o timestamp ISO8601 opzionali.【F:visual-editor/src/workflow-format.ts†L26-L28】【F:visual-editor/backend/app/models.py†L41-L51】 |
+
+#### Nodi (`WorkflowNodeDefinition`)
+
+| Campo | Obbligatorio | Tipo | Note |
+| --- | --- | --- | --- |
+| `id` | Sì | string | Deve essere univoco all'interno del workflow.【F:visual-editor/src/workflow-format.ts†L41-L51】【F:visual-editor/backend/app/models.py†L100-L223】 |
+| `kind` | Sì | `"input" \| "task" \| "output"` | Determina il ruolo logico del nodo.【F:visual-editor/src/workflow-format.ts†L11-L12】【F:visual-editor/backend/app/models.py†L103-L109】 |
+| `label` | Sì | string | Etichetta non vuota mostrata nel canvas.【F:visual-editor/src/workflow-format.ts†L41-L51】【F:visual-editor/backend/app/models.py†L112-L117】 |
+| `position` | Sì | `{ x: number; y: number; }` | Coordinate finite sul canvas React Flow.【F:visual-editor/src/workflow-format.ts†L31-L34】【F:visual-editor/backend/app/models.py†L66-L76】 |
+| `data` | No | `Record<string, unknown>` | Payload serializzabile usato dall'esecutore; vedere sotto per `component` e `parameters`.
+
+Per collegare i nodi a componenti Python si consiglia di usare un oggetto `data` con le seguenti convenzioni:
+
+```json
+{
+  "component": "datapizza.modules.parsers.docling.DoclingParser",
+  "parameters": { "json_output_dir": "./cache" }
+}
+```
+
+- `data.component` contiene il percorso puntato alla classe eseguibile (modulo + nome) che risolve a un `PipelineComponent` o a un costruttore compatibile con i nodi del workflow.
+- `data.parameters` è un dizionario opzionale con i parametri del costruttore. Il backend accetta qualsiasi struttura purché sia JSON serializzabile.【F:visual-editor/src/workflow-format.ts†L46-L50】【F:visual-editor/backend/app/models.py†L100-L117】 
+
+#### Archi (`WorkflowEdgeDefinition`)
+
+| Campo | Obbligatorio | Tipo | Note |
+| --- | --- | --- | --- |
+| `id` | Sì | string | Deve essere univoco per edge.【F:visual-editor/src/workflow-format.ts†L53-L59】【F:visual-editor/backend/app/models.py†L119-L223】 |
+| `source` / `target` | Sì | `{ nodeId: string; portId?: string }` | `nodeId` non può essere vuoto e deve riferirsi a un nodo esistente; `portId` è opzionale.【F:visual-editor/src/workflow-format.ts†L36-L39】【F:visual-editor/backend/app/models.py†L79-L98】【F:visual-editor/backend/app/models.py†L225-L234】 |
+| `label` | No | string | Etichetta opzionale non vuota.【F:visual-editor/backend/app/models.py†L119-L141】 |
+| `metadata` | No | `Record<string, unknown>` | Informazioni aggiuntive custom.【F:visual-editor/src/workflow-format.ts†L53-L59】 |
+
+#### Estensioni (`WorkflowDefinitionExtensions`)
+
+| Campo | Obbligatorio | Tipo | Note |
+| --- | --- | --- | --- |
+| `reactFlow` | No | oggetto | Impostazioni dell'editor (viewport, UI) con campi aggiuntivi ammessi.【F:visual-editor/src/workflow-format.ts†L61-L80】【F:visual-editor/backend/app/models.py†L144-L175】 |
+| `backend` | No | oggetto | Suggerimenti esecutivi personalizzati per il runtime.【F:visual-editor/src/workflow-format.ts†L72-L80】【F:visual-editor/backend/app/models.py†L166-L175】 |
+
+#### Risultati di esecuzione (`WorkflowExecutionResult`)
+
+L'esecutore mock restituisce un identificativo di run, lo stato aggregato e i dettagli passo-passo. Il campo `outputs` è un dizionario serializzabile che può contenere risultati strutturati (es. snapshot dei nodi o payload prodotti dai componenti Python).【F:visual-editor/src/workflow-format.ts†L136-L148】【F:visual-editor/backend/app/models.py†L244-L258】 I consumer dovrebbero mantenere chiavi stabili (ad esempio `nodeOutputs` o `artifacts`) per facilitare la re-idratazione lato frontend.
+
 ### Esempio JSON
 
 ```json
