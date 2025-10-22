@@ -6,7 +6,7 @@ import os
 import sys
 from contextlib import contextmanager
 from functools import lru_cache
-from typing import Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
+from typing import Dict, Iterator, List, Literal, Optional, Tuple, TYPE_CHECKING
 
 from pydantic import BaseModel, BaseSettings, Field, validator
 
@@ -58,6 +58,18 @@ class AppSettings(BaseSettings):
     )
     executor_node_timeout: float = Field(30.0, env="DATAPIZZA_EXECUTOR_NODE_TIMEOUT")
     executor_max_workers: int = Field(1, env="DATAPIZZA_EXECUTOR_MAX_WORKERS")
+    executor_mode: Literal["mock", "remote"] = Field(
+        "mock", env="DATAPIZZA_EXECUTOR_MODE"
+    )
+    remote_executor_url: Optional[str] = Field(
+        default=None, env="DATAPIZZA_REMOTE_EXECUTOR_URL"
+    )
+    remote_executor_timeout: float = Field(
+        60.0, env="DATAPIZZA_REMOTE_EXECUTOR_TIMEOUT"
+    )
+    remote_executor_headers: Dict[str, str] = Field(
+        default_factory=dict, env="DATAPIZZA_REMOTE_EXECUTOR_HEADERS"
+    )
 
     class Config:
         env_file = ".env"
@@ -72,7 +84,7 @@ class AppSettings(BaseSettings):
             return [item for item in value.split(":") if item]
         return list(value)
 
-    @validator("environment_variables", "credentials", pre=True)
+    @validator("environment_variables", "credentials", "remote_executor_headers", pre=True)
     def _validate_env_mapping(cls, value: Optional[object]) -> Dict[str, str]:
         if value is None or value == "":
             return {}

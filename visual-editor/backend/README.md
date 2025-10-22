@@ -43,8 +43,14 @@ I test coprono il loader dinamico (`resolve_component`, `normalise_parameters`, 
 - `DATAPIZZA_ENVIRONMENT_VARIABLES` e `DATAPIZZA_CREDENTIALS`: dizionari JSON con coppie chiave/valore impostate nell'ambiente di processo.
 - `DATAPIZZA_RUNTIME_ENVIRONMENTS`: dizionario JSON che mappa un nome di ambiente (`dev`, `staging`, ...) a profili con percorsi, variabili e credenziali specifiche.
 - `DATAPIZZA_EXECUTOR_NODE_TIMEOUT` e `DATAPIZZA_EXECUTOR_MAX_WORKERS`: parametri usati per inizializzare l'esecutore reale.
+- `DATAPIZZA_EXECUTOR_MODE`: feature flag che commuta tra esecuzione locale (`mock`, default) e inoltro remoto (`remote`).【F:visual-editor/backend/app/settings.py†L42-L107】【F:visual-editor/backend/app/main.py†L74-L113】
+- `DATAPIZZA_REMOTE_EXECUTOR_URL`, `DATAPIZZA_REMOTE_EXECUTOR_TIMEOUT` e `DATAPIZZA_REMOTE_EXECUTOR_HEADERS`: endpoint REST, timeout (secondi) e intestazioni aggiuntive usati quando l'esecuzione è delegata a un servizio esterno Datapizza.【F:visual-editor/backend/app/settings.py†L42-L115】【F:visual-editor/backend/app/main.py†L74-L113】
 
 L'applicazione invoca `configure_base_environment()` in fase di startup per applicare i percorsi e le variabili globali una sola volta.【F:visual-editor/backend/app/main.py†L43-L51】【F:visual-editor/backend/app/settings.py†L96-L102】
+
+### Modalità esecutore e feature flag
+
+`AppSettings.executor_mode` abilita lo switch fra due percorsi di esecuzione controllati.【F:visual-editor/backend/app/settings.py†L42-L115】【F:visual-editor/backend/app/main.py†L74-L113】 Con `mock` (default) viene istanziato `DatapizzaWorkflowExecutor`, che carica dinamicamente i componenti Python locali, traccia i tempi di ogni nodo e produce un risultato compatibile con l'editor.【F:visual-editor/backend/app/executor.py†L44-L236】 Impostando `DATAPIZZA_EXECUTOR_MODE=remote` l'API costruisce un `RemoteWorkflowExecutor` che inoltra il workflow a un endpoint configurabile (`DATAPIZZA_REMOTE_EXECUTOR_URL`) usando `httpx`, propagando eventuali intestazioni personalizzate e timeout.【F:visual-editor/backend/app/executor.py†L238-L330】【F:visual-editor/backend/app/main.py†L74-L113】 Entrambe le modalità rispettano lo stesso schema di `WorkflowExecutionResult`, così il frontend non richiede modifiche.
 
 ### Opzioni runtime per `/workflow/execute`
 
@@ -52,7 +58,16 @@ L'endpoint di esecuzione accetta ora sia il payload storico (solo il workflow) s
 
 ## Dipendenze Python
 
-Il file `requirements.txt` contiene ora, oltre a FastAPI e Pydantic, i pacchetti Datapizza necessari per eseguire realmente i workflow orchestrati dal visual editor (core, parser, reranker, tool e vectorstore).【F:visual-editor/backend/requirements.txt†L1-L13】 Installarli con `pip install -r requirements.txt` garantisce la disponibilità dei componenti Python caricati dall'esecutore senza dover configurare manualmente i singoli moduli.
+Il file `requirements.txt` contiene ora, oltre a FastAPI e Pydantic, le librerie richieste dal backend (inclusi `httpx` per l'esecutore remoto e `structlog` per il logging strutturato) e i pacchetti Datapizza necessari per eseguire realmente i workflow orchestrati dal visual editor (core, parser, reranker, tool e vectorstore).【F:visual-editor/backend/requirements.txt†L1-L20】 Installarli con `pip install -r requirements.txt` garantisce la disponibilità dei componenti Python caricati dall'esecutore senza dover configurare manualmente i singoli moduli.
+
+## Osservabilità
+
+Il backend inizializza `structlog` con output JSON e registra metriche OpenTelemetry a ogni richiesta, esportandole periodicamente sulla console tramite `ConsoleMetricExporter`.【F:visual-editor/backend/app/observability.py†L1-L110】【F:visual-editor/backend/app/main.py†L43-L65】 `DatapizzaWorkflowExecutor` emette eventi strutturati per l'avvio, la conclusione e gli errori di ogni nodo e aggiorna tre metriche chiave: conteggio delle esecuzioni, durata complessiva e distribuzione dei tempi per step, oltre al contatore degli errori.【F:visual-editor/backend/app/executor.py†L44-L236】 Gli stessi strumenti vengono riutilizzati dal `RemoteWorkflowExecutor` per tracciare le chiamate HTTP delegate, includendo dettagli sull'esito remoto e gli eventuali status code ricevuti.【F:visual-editor/backend/app/executor.py†L238-L330】 In questo modo, a parità di configurazione, si possono confrontare i tempi ottenuti in modalità mock e remote e inviare i dati a pipeline di osservabilità esterne configurando un diverso exporter OpenTelemetry.
+
+## Procedure di deploy e fallback
+
+1. **Abilitare l'esecuzione remota**: definire `DATAPIZZA_EXECUTOR_MODE=remote` e popolare `DATAPIZZA_REMOTE_EXECUTOR_URL` (eventualmente `..._TIMEOUT` e `..._HEADERS`) nello stack di deploy. Al riavvio, l'API costruisce un esecutore remoto memorizzato in cache che inoltra i workflow all'endpoint specificato.【F:visual-editor/backend/app/settings.py†L42-L115】【F:visual-editor/backend/app/main.py†L74-L113】 Monitorare i log JSON prodotti da `RemoteWorkflowExecutor` per verificare gli status code e gli eventuali errori di rete.【F:visual-editor/backend/app/executor.py†L238-L330】 Le metriche OpenTelemetry permettono di confrontare latenza locale vs remota e di alimentare dashboard di osservabilità.【F:visual-editor/backend/app/observability.py†L1-L110】
+2. **Ripristinare il mock executor**: impostare `DATAPIZZA_EXECUTOR_MODE=mock` (o rimuovere l'override) e riavviare il processo. L'app ritorna a `DatapizzaWorkflowExecutor`, mantenendo invariati endpoint e schema di risposta, così il frontend non necessita di modifiche. Le variabili `DATAPIZZA_REMOTE_EXECUTOR_*` possono restare definite ma vengono ignorate quando il flag è su `mock`, facilitando rollback rapidi in caso di regressioni.【F:visual-editor/backend/app/main.py†L74-L113】【F:visual-editor/backend/app/executor.py†L44-L236】 Anche in questa modalità continuano a essere emessi log/metriche strutturate utili per validare il corretto funzionamento prima di un nuovo cutover.
 
 ## Mapping nodi → componenti Python
 

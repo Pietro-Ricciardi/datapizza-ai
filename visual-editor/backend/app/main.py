@@ -8,7 +8,11 @@ from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-from .executor import DatapizzaWorkflowExecutor
+from .executor import (
+    DatapizzaWorkflowExecutor,
+    RemoteExecutionError,
+    RemoteWorkflowExecutor,
+)
 from .models import (
     WORKFLOW_FORMAT_VERSION,
     WorkflowDefinition,
@@ -18,6 +22,7 @@ from .models import (
     WorkflowSchemaResponse,
     WorkflowValidationResponse,
 )
+from .observability import configure_observability, shutdown_observability
 from .settings import AppSettings, get_settings, runtime_configuration
 
 app = FastAPI(
@@ -39,17 +44,43 @@ app.add_middleware(
 
 
 @lru_cache(maxsize=1)
-def _build_executor(node_timeout: float, max_workers: int) -> DatapizzaWorkflowExecutor:
+def _build_local_executor(
+    node_timeout: float, max_workers: int
+) -> DatapizzaWorkflowExecutor:
     """Return a cached executor instance configured with the given parameters."""
 
     return DatapizzaWorkflowExecutor(node_timeout=node_timeout, max_workers=max_workers)
+
+
+@lru_cache(maxsize=1)
+def _build_remote_executor(
+    execution_url: str,
+    timeout: float,
+    headers_signature: Tuple[Tuple[str, str], ...],
+) -> RemoteWorkflowExecutor:
+    """Return a cached remote executor configured for the target service."""
+
+    headers = dict(headers_signature)
+    return RemoteWorkflowExecutor(
+        execution_url=execution_url,
+        timeout=timeout,
+        headers=headers,
+    )
 
 
 @app.on_event("startup")
 def _configure_runtime_environment() -> None:
     """Apply base runtime configuration as soon as the application starts."""
 
+    configure_observability()
     get_settings().configure_base_environment()
+
+
+@app.on_event("shutdown")
+def _shutdown_observability() -> None:
+    """Flush telemetry processors when the application stops."""
+
+    shutdown_observability()
 
 
 @app.get("/", tags=["system"])
@@ -89,8 +120,30 @@ def _parse_execution_request(
     return _parse_workflow(payload), None
 
 
-def _resolve_executor(settings: AppSettings) -> DatapizzaWorkflowExecutor:
-    return _build_executor(settings.executor_node_timeout, settings.executor_max_workers)
+def _resolve_executor(
+    settings: AppSettings,
+) -> DatapizzaWorkflowExecutor | RemoteWorkflowExecutor:
+    mode = settings.executor_mode.lower()
+    if mode == "remote":
+        if not settings.remote_executor_url:
+            raise HTTPException(
+                status_code=500,
+                detail="Remote executor URL is not configured",
+            )
+        headers_signature = tuple(sorted(settings.remote_executor_headers.items()))
+        return _build_remote_executor(
+            settings.remote_executor_url,
+            settings.remote_executor_timeout,
+            headers_signature,
+        )
+    if mode != "mock":
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unsupported executor mode '{settings.executor_mode}'",
+        )
+    return _build_local_executor(
+        settings.executor_node_timeout, settings.executor_max_workers
+    )
 
 
 @app.post(
@@ -136,15 +189,21 @@ def validate_workflow(payload: Dict[str, Any] = Body(...)) -> WorkflowValidation
     "/workflow/execute",
     response_model=WorkflowExecutionResult,
     tags=["workflow"],
-    summary="Execute a workflow using the mock executor",
+    summary="Execute a workflow using the configured executor",
 )
 def execute_workflow(payload: Dict[str, Any] = Body(...)) -> WorkflowExecutionResult:
     settings = get_settings()
     workflow, options = _parse_execution_request(payload)
     executor = _resolve_executor(settings)
 
-    with runtime_configuration(settings, options):
-        result = executor.run(workflow)
+    try:
+        if isinstance(executor, DatapizzaWorkflowExecutor):
+            with runtime_configuration(settings, options):
+                result = executor.run(workflow, options=options)
+        else:
+            result = executor.run(workflow, options=options)
+    except RemoteExecutionError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     if options:
         runtime_metadata = result.outputs.setdefault("runtime", {})
