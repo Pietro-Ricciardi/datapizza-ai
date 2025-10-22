@@ -48,6 +48,12 @@ Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizz
 
 L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Per personalizzare il grafo iniziale aggiornare l'oggetto `initialWorkflow` definito in `src/App.tsx`. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto. `initializeWorkflowStoreFromDefinition` restituisce l'intero stato React Flow persistito nelle estensioni (viewport, pannelli, ecc.), mentre `serializeWorkflowFromStore` accetta un oggetto `reactFlow` opzionale per sovrascrivere o aggiungere nuove preferenze dell'interfaccia al momento dell'export.
 
+## Esecuzione del workflow e integrazione con il backend mock
+
+L'editor espone ora un pannello laterale dedicato all'esecuzione del workflow contro il backend FastAPI incluso in `backend/app`. Il componente React principale (`src/App.tsx`) permette di impostare ambiente runtime e riferimenti a risorse esterne, avvia l'esecuzione reale tramite il client `src/services/workflow-api.ts` e visualizza lo stato di ogni nodo insieme al payload di output restituito dall'esecutore. Lo store Zustand (`src/store/workflow-store.ts`) traccia run ID, errori, stati dei nodi e risultati normalizzati così da poter aggiornare l'interfaccia senza ricorrere a stato locale duplicato.
+
+Per garantire la compatibilità con il loader Python viene introdotto `src/workflow-parameters.ts`, un set di utility per normalizzare i parametri dei nodi (mappe, set, date, URL e riferimenti a risorse esterne) in strutture JSON serializzabili. La funzione è utilizzata dalla serializzazione (`src/workflow-format.ts`) e resa disponibile ai componenti per creare riferimenti a risorse condivise (`createResourceReference`).
+
 ## Formato di esportazione/importazione dei workflow
 
 Il visual editor espone un formato di serializzazione pensato per essere esportato in **JSON** o in **YAML** senza modifiche. La definizione è disponibile in `src/workflow-format.ts` ed è descritta dai seguenti elementi principali:

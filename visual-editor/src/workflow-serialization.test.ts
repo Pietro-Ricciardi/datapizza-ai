@@ -8,6 +8,7 @@ import {
   initializeWorkflowStoreFromDefinition,
   serializeWorkflowFromStore,
 } from "./workflow-serialization";
+import { createResourceReference } from "./workflow-parameters";
 
 const workflow: WorkflowDefinition = {
   version: WORKFLOW_FORMAT_VERSION,
@@ -104,6 +105,67 @@ describe("workflow-serialization", () => {
       inspectorTab: "configuration",
       sidebarOpen: false,
       lastSelection: ["process"],
+    });
+  });
+
+  it("normalises complex node parameters when serialising", () => {
+    useWorkflowStore.setState({
+      nodes: [
+        {
+          id: "complex",
+          type: "default",
+          position: { x: 0, y: 0 },
+          data: {
+            label: "Nodo complesso",
+            component: "datapizza.complex.component",
+            parameters: new Map([
+              ["thresholds", new Set([0.2, 0.8])],
+              [
+                "metadata",
+                new Map([
+                  ["window", { start: new Date("2024-05-01T12:00:00.000Z"), durationMinutes: 15 }],
+                  ["tags", ["raw", "ingestion"]],
+                ]),
+              ],
+              [
+                "resource",
+                createResourceReference("s3://datasets/raw.csv", {
+                  description: "Dataset grezzo",
+                }),
+              ],
+            ]),
+          },
+        },
+      ],
+      edges: [],
+    });
+
+    const snapshot = serializeWorkflowFromStore({
+      metadata: {
+        ...workflow.metadata,
+        name: "Complex parameters",
+      },
+      version: workflow.version,
+    });
+
+    expect(snapshot.nodes).toHaveLength(1);
+    expect(snapshot.nodes[0]?.data).toEqual({
+      component: "datapizza.complex.component",
+      parameters: {
+        thresholds: [0.2, 0.8],
+        metadata: {
+          window: {
+            start: "2024-05-01T12:00:00.000Z",
+            durationMinutes: 15,
+          },
+          tags: ["raw", "ingestion"],
+        },
+        resource: {
+          type: "resource",
+          uri: "s3://datasets/raw.csv",
+          description: "Dataset grezzo",
+        },
+      },
     });
   });
 });

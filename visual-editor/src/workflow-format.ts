@@ -1,4 +1,5 @@
 import type { Edge, Node } from "reactflow";
+import { normaliseNodeData } from "./workflow-parameters";
 
 /**
  * Workflow definition version supported by the visual editor. The value is used
@@ -124,7 +125,11 @@ export interface WorkflowValidationResponse {
   issues: WorkflowValidationIssue[];
 }
 
-export type WorkflowExecutionStepStatus = "pending" | "running" | "completed";
+export type WorkflowExecutionStepStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed";
 
 export interface WorkflowExecutionStep {
   nodeId: string;
@@ -145,6 +150,19 @@ export interface WorkflowExecutionResult {
    * summaries, artefact references).
    */
   outputs: Record<string, unknown>;
+}
+
+export interface WorkflowRuntimeOptions {
+  environment?: string;
+  componentSearchPaths?: string[];
+  environmentVariables?: Record<string, string>;
+  credentials?: Record<string, string>;
+  configOverrides?: Record<string, unknown>;
+}
+
+export interface WorkflowExecutionRequest {
+  workflow: WorkflowDefinition;
+  options?: WorkflowRuntimeOptions;
 }
 
 export interface WorkflowSchemaResponse {
@@ -216,17 +234,22 @@ export function fromReactFlowGraph({
   extensions,
 }: FromReactFlowParams): WorkflowDefinition {
   const workflowNodes: WorkflowNodeDefinition[] = nodes.map((node) => {
-    const nodeData = cloneSerializable(node.data ?? {});
-    const { label, ...rest } = nodeData as Record<string, unknown> & {
+    const nodeData = (node.data ?? {}) as Record<string, unknown> & {
       label?: unknown;
     };
+    const { label, ...rawConfiguration } = nodeData;
+    const normalisedConfiguration = normaliseNodeData(rawConfiguration);
+    const serialisableData =
+      normalisedConfiguration !== undefined
+        ? cloneSerializable(normalisedConfiguration)
+        : undefined;
 
     return {
       id: node.id,
       kind: node.type === "input" ? "input" : node.type === "output" ? "output" : "task",
       label: typeof label === "string" ? label : node.id,
       position: { x: node.position.x, y: node.position.y },
-      data: Object.keys(rest).length > 0 ? rest : undefined,
+      data: serialisableData,
     } satisfies WorkflowNodeDefinition;
   });
 
