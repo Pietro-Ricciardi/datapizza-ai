@@ -5,8 +5,10 @@ import {
 } from "./workflow-format";
 import { useWorkflowStore } from "./store/workflow-store";
 import {
+  ensureWorkflowFormatVersion,
   initializeWorkflowStoreFromDefinition,
   serializeWorkflowFromStore,
+  validateWorkflowLocally,
 } from "./workflow-serialization";
 import { createResourceReference } from "./workflow-parameters";
 
@@ -65,7 +67,7 @@ beforeEach(() => {
 
 describe("workflow-serialization", () => {
   it("populates the store from a workflow definition", () => {
-    const reactFlowState = initializeWorkflowStoreFromDefinition(workflow);
+    const { reactFlow: reactFlowState } = initializeWorkflowStoreFromDefinition(workflow);
     const state = useWorkflowStore.getState();
 
     expect(state.nodes).toHaveLength(workflow.nodes.length);
@@ -197,5 +199,58 @@ describe("workflow-serialization", () => {
       threshold: 0.75,
       metadata: { stage: "validation" },
     });
+  });
+
+  it("migra workflow legacy al formato supportato", () => {
+    const legacyWorkflow = {
+      ...workflow,
+      version: "datapizza.workflow/preview",
+      metadata: {
+        ...workflow.metadata,
+        tags: "ml,  orchestration ,", // stringa legacy che deve essere splittata
+      },
+    } as const;
+
+    const migrated = ensureWorkflowFormatVersion(legacyWorkflow);
+    expect(migrated.version).toBe(WORKFLOW_FORMAT_VERSION);
+    expect(migrated.metadata.tags).toEqual(["ml", "orchestration"]);
+  });
+
+  it("esegue la validazione locale producendo issue dettagliate", () => {
+    const invalidWorkflow = {
+      ...workflow,
+      nodes: [
+        {
+          ...workflow.nodes[0]!,
+          id: "",
+          label: "",
+        },
+      ],
+      edges: [
+        {
+          ...workflow.edges[0]!,
+          source: { nodeId: "missing" },
+          target: { nodeId: "" },
+        },
+      ],
+      metadata: {
+        ...workflow.metadata,
+        name: "",
+        tags: ["valid", ""],
+      },
+    } satisfies WorkflowDefinition;
+
+    const result = validateWorkflowLocally(invalidWorkflow);
+    expect(result.valid).toBe(false);
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        "metadata.name: deve essere una stringa non vuota",
+        "metadata.tags: non sono ammessi tag vuoti",
+        "nodes[0].id: deve essere una stringa non vuota",
+        'nodes[0].label: deve essere una stringa non vuota',
+        'edges[0].source.nodeId: riferimento a nodo sconosciuto "missing"',
+        'edges[0].target.nodeId: deve essere una stringa non vuota',
+      ]),
+    );
   });
 });
