@@ -30,7 +30,7 @@ export default defineConfig({
     },
   },
   test: {
-    environment: "node",
+    environment: "jsdom",
     coverage: {
       reporter: ["text", "json-summary"],
     },
