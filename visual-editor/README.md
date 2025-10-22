@@ -320,13 +320,6 @@ anche i tipi `WorkflowValidationResponse`, `WorkflowExecutionResult` e
 `WorkflowSchemaResponse` che descrivono le risposte fornite dagli endpoint di
 validazione, esecuzione e introspezione dello schema.
 
-## Roadmap prossimi step
-
-Con il bootstrap completato, i prossimi passi prevedono:
-
-1. ~~Definire lo store dell'applicazione (Zustand o alternativa) per la gestione dei nodi.~~ Completato con `useWorkflowStore` basato su Zustand.
-2. Modellare il formato dei workflow esportabili/importabili (JSON/YAML).
-3. ~~Preparare un backend leggero (FastAPI) per serializzazione, validazione ed esecuzione dei workflow.~~ Completato con l'applicazione FastAPI in `visual-editor/backend/`.
 
 ## Note operative
 - Il visual editor deve rimanere **standalone** e non condividere configurazioni con il resto del repository.
