@@ -20,6 +20,12 @@ Il pulsante **Catalogo workflow** presente nell'header apre un drawer laterale c
 - **Workflow predefiniti**: raccolta di template ML, ETL e di orchestrazione che reimpostano il canvas con nodi, archi e metadati già pronti.
 - **Nodi preconfigurati**: libreria drag & drop di input, task e output riutilizzabili con payload `component`/`parameters` già popolati.
 
+### Filtrare il catalogo
+
+- La barra di ricerca in cima al drawer filtra workflow e nodi in tempo reale analizzando nome e descrizione, mantenendo i risultati sincronizzati con i badge numerici delle sezioni.
+- I chip dei tag permettono di combinare rapidamente categorie (es. "Machine Learning", "ETL") e metadati aggiuntivi (`demo`, `events`, ecc.). Più tag selezionati restringono progressivamente la lista.
+- Il contatore vicino a "Workflow predefiniti" e "Nodi preconfigurati" indica quante voci sono visibili con i filtri correnti; un messaggio di stato ricorda quando la ricerca non produce risultati.
+
 ### Avviare un workflow da template
 
 1. Apri il catalogo e scegli un template (es. "Pipeline ML supervisionata").

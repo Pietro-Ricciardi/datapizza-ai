@@ -62,7 +62,6 @@ import {
   NODE_TEMPLATES,
   WORKFLOW_TEMPLATES,
   WORKFLOW_TEMPLATE_CATEGORIES,
-  groupNodeTemplatesByCategory,
   type NodeTemplate,
   type WorkflowTemplate,
 } from "./data/workflow-templates";
@@ -76,6 +75,7 @@ import {
   type Locale,
 } from "./i18n";
 import type { Translations } from "./i18n/resources";
+import { TemplateCatalog } from "./components/TemplateCatalog";
 
 const NodeInspector = lazy(() => import("./components/NodeInspector"));
 const ExecutionHistoryTimeline = lazy(
@@ -107,17 +107,6 @@ type AppHeaderProps = {
   exportMenuOpen: boolean;
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
-  translations: Translations[Locale];
-};
-
-type LibraryDrawerProps = {
-  open: boolean;
-  templates: WorkflowTemplate[];
-  activeTemplateId: string;
-  nodeGroups: ReturnType<typeof groupNodeTemplatesByCategory>;
-  onClose: () => void;
-  onApplyTemplate: (templateId: string) => void;
-  onNodeDragStart: (event: DragEvent<HTMLElement>, template: NodeTemplate) => void;
   translations: Translations[Locale];
 };
 
@@ -346,166 +335,6 @@ function AppHeader({
   );
 }
 
-function LibraryDrawer({
-  open,
-  templates,
-  activeTemplateId,
-  nodeGroups,
-  onClose,
-  onApplyTemplate,
-  onNodeDragStart,
-  translations,
-}: LibraryDrawerProps) {
-  const { library } = translations;
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const containerRef = useRef<HTMLElement | null>(null);
-  const dialogTitleId = "library-drawer-title";
-  const dialogDescriptionId = "library-drawer-description";
-
-  useEffect(() => {
-    if (open) {
-      closeButtonRef.current?.focus({ preventScroll: true });
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-    const handler = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", handler);
-    return () => {
-      document.removeEventListener("keydown", handler);
-    };
-  }, [open, onClose]);
-
-  return (
-    <aside
-      ref={containerRef}
-      className={`library-drawer${open ? " library-drawer--open" : ""}`}
-      aria-hidden={!open}
-      aria-modal={open ? true : undefined}
-      aria-labelledby={dialogTitleId}
-      aria-describedby={dialogDescriptionId}
-      aria-label={library.ariaLabel}
-      role="dialog"
-      tabIndex={-1}
-    >
-      <div className="library-drawer__header">
-        <div>
-          <p className="library-drawer__eyebrow" id={dialogDescriptionId}>
-            {library.eyebrow}
-          </p>
-          <h2 className="library-drawer__title" id={dialogTitleId}>
-            {library.title}
-          </h2>
-        </div>
-        <button
-          ref={closeButtonRef}
-          className="button button--ghost library-drawer__close"
-          type="button"
-          onClick={onClose}
-          aria-label={library.closeLabel}
-        >
-          {library.close}
-        </button>
-      </div>
-      <div className="library-drawer__content">
-        <section className="library-drawer__section">
-          <header>
-            <h3>{library.workflowsTitle}</h3>
-            <p>{library.workflowsDescription}</p>
-          </header>
-          <div className="template-grid">
-            {templates.map((template) => {
-              const category =
-                WORKFLOW_TEMPLATE_CATEGORIES[template.category] ??
-                ({ label: template.category, description: "" } as const);
-              const isActive = template.id === activeTemplateId;
-              return (
-                <article
-                  key={template.id}
-                  className={`template-card${isActive ? " template-card--active" : ""}`}
-                >
-                  <div className="template-card__header">
-                    <span className="template-card__icon" aria-hidden>
-                      {template.icon}
-                    </span>
-                    <div>
-                      <h4>{template.name}</h4>
-                      <p>{template.description}</p>
-                    </div>
-                  </div>
-                  <div className="template-card__footer">
-                    <span className="template-card__badge">{category.label}</span>
-                    <button
-                      className="button button--ghost template-card__action"
-                      type="button"
-                      onClick={() => onApplyTemplate(template.id)}
-                      aria-pressed={isActive}
-                    >
-                      {isActive ? library.reload : library.apply}
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-        <section className="library-drawer__section">
-          <header>
-            <h3>{library.nodesTitle}</h3>
-            <p>{library.nodesDescription}</p>
-          </header>
-          <div className="node-template-groups">
-            {Object.entries(nodeGroups).map(([categoryKey, nodes]) => {
-              if (nodes.length === 0) {
-                return null;
-              }
-              const category =
-                WORKFLOW_TEMPLATE_CATEGORIES[
-                  categoryKey as keyof typeof WORKFLOW_TEMPLATE_CATEGORIES
-                ] ?? { label: categoryKey, description: "" };
-              return (
-                <div key={categoryKey} className="node-template-group">
-                  <div className="node-template-group__header">
-                    <span className="node-template-group__badge">{category.label}</span>
-                    <p>{category.description}</p>
-                  </div>
-                  <div className="node-template-list">
-                    {nodes.map((node) => (
-                      <button
-                        key={node.id}
-                        type="button"
-                        className="node-template"
-                        draggable
-                        onDragStart={(event) => onNodeDragStart(event, node)}
-                      >
-                        <span className="node-template__icon" aria-hidden>
-                          {node.icon}
-                        </span>
-                        <span className="node-template__content">
-                          <span className="node-template__title">{node.label}</span>
-                          <span className="node-template__description">{node.description}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-    </aside>
-  );
-}
-
 function ImportWorkflowDialog({
   open,
   onClose,
@@ -671,7 +500,6 @@ function WorkflowApp(): JSX.Element {
     () => new Map<string, NodeTemplate>(NODE_TEMPLATES.map((template) => [template.id, template])),
     [],
   );
-  const nodeTemplateGroups = useMemo(() => groupNodeTemplatesByCategory(), []);
 
   const [activeTemplateId, setActiveTemplateId] = useState(initialTemplate.id);
   const activeTemplate = useMemo(
@@ -1553,11 +1381,11 @@ function WorkflowApp(): JSX.Element {
         error={importError}
         translations={t}
       />
-      <LibraryDrawer
+      <TemplateCatalog
         open={isLibraryOpen}
         templates={WORKFLOW_TEMPLATES}
         activeTemplateId={activeTemplateId}
-        nodeGroups={nodeTemplateGroups}
+        nodeTemplates={NODE_TEMPLATES}
         onClose={() => {
           setIsLibraryOpen(false);
           setIsExportMenuOpen(false);
