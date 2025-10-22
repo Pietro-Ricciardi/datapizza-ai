@@ -15,6 +15,8 @@ import {
   type WorkflowExecutionResultStatus,
   type WorkflowExecutionStep,
   type WorkflowMetadata,
+  type WorkflowDefinition,
+  type WorkflowRuntimeOptions,
 } from "../workflow-format";
 import {
   validateWorkflowGraph,
@@ -24,6 +26,10 @@ import {
   type WorkflowValidationScope,
   type WorkflowValidationSeverity,
 } from "../services/workflow-validation";
+import type {
+  WorkflowRunStatusResponse,
+  WorkflowRunStepStatus,
+} from "../services/workflow-api";
 
 type WorkflowState = {
   nodes: Node[];
@@ -47,7 +53,7 @@ type WorkflowActions = {
   ) => void;
 };
 
-type WorkflowExecutionStatus = WorkflowExecutionResultStatus | "idle";
+type WorkflowExecutionStatus = WorkflowExecutionResultStatus | "idle" | "running";
 
 interface WorkflowExecutionContext {
   runId?: string;
@@ -103,12 +109,45 @@ type WorkflowValidationContextState = {
   validation: WorkflowValidationState;
 };
 
+export interface WorkflowRunHistoryItem {
+  runId: string;
+  status: WorkflowRunStatusResponse["status"];
+  createdAt: string;
+  updatedAt: string;
+  workflowName: string;
+  archived: boolean;
+  definition: WorkflowDefinition;
+  options?: WorkflowRuntimeOptions;
+  result?: WorkflowExecutionResult;
+  error?: string;
+}
+
+type WorkflowHistoryState = {
+  history: WorkflowRunHistoryItem[];
+};
+
+type WorkflowHistoryActions = {
+  addHistoryRun: (entry: WorkflowRunHistoryItem) => void;
+  updateHistoryRun: (
+    runId: string,
+    patch: Partial<Omit<WorkflowRunHistoryItem, "runId" | "definition" | "options">>,
+  ) => void;
+  archiveHistoryRun: (runId: string) => void;
+};
+
+type WorkflowExecutionProgressActions = {
+  updateExecutionFromRun: (status: WorkflowRunStatusResponse) => void;
+};
+
 type WorkflowStore = WorkflowState &
   WorkflowActions &
   WorkflowExecutionState &
   WorkflowExecutionActions &
   WorkflowValidationContextState &
-  WorkflowValidationActions;
+  WorkflowValidationActions &
+  WorkflowHistoryState &
+  WorkflowHistoryActions &
+  WorkflowExecutionProgressActions;
 
 type StoreSet = StoreApi<WorkflowStore>["setState"];
 
@@ -137,6 +176,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
   execution: createDefaultExecutionState(),
   validationMetadata: undefined,
   validation: createInitialValidationState(),
+  history: [],
   initialize: (nodes, edges) => {
     set(
       {
@@ -253,7 +293,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       return {
         execution: {
           runId: undefined,
-          status: "idle",
+          status: "running",
           loading: true,
           error: undefined,
           outputs: undefined,
@@ -289,6 +329,87 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       },
     })),
   resetExecution: () => set({ execution: createDefaultExecutionState() }),
+  addHistoryRun: (entry) =>
+    set((state) => {
+      const existing = state.history.filter((run) => run.runId !== entry.runId);
+      const clonedEntry: WorkflowRunHistoryItem = {
+        ...entry,
+        definition: cloneSerializable(entry.definition),
+        options: entry.options ? cloneSerializable(entry.options) : undefined,
+        result: entry.result ? cloneSerializable(entry.result) : entry.result,
+      };
+      const nextHistory = [clonedEntry, ...existing].sort((a, b) =>
+        a.createdAt < b.createdAt ? 1 : -1,
+      );
+      return { history: nextHistory };
+    }),
+  updateHistoryRun: (runId, patch) =>
+    set((state) => ({
+      history: state.history.map((run) =>
+        run.runId === runId
+          ? {
+              ...run,
+              ...patch,
+              result: patch.result
+                ? cloneSerializable(patch.result)
+                : run.result,
+              error:
+                Object.prototype.hasOwnProperty.call(patch, "error")
+                  ? patch.error
+                  : run.error,
+              archived:
+                Object.prototype.hasOwnProperty.call(patch, "archived")
+                  ? Boolean(patch.archived)
+                  : run.archived,
+            }
+          : run,
+      ),
+    })),
+  archiveHistoryRun: (runId) =>
+    set((state) => ({
+      history: state.history.map((run) =>
+        run.runId === runId ? { ...run, archived: true } : run,
+      ),
+    })),
+  updateExecutionFromRun: (status) =>
+    set((state) => {
+      const nextSteps = { ...state.execution.steps };
+      status.steps.forEach((step) => {
+        nextSteps[step.nodeId] = {
+          nodeId: step.nodeId,
+          status: step.status,
+          details: step.details,
+        };
+      });
+
+      const isTerminal = status.status === "success" || status.status === "failure";
+      let mappedStatus: WorkflowExecutionStatus = state.execution.status;
+      if (status.status === "running") {
+        mappedStatus = "running";
+      } else if (status.status === "pending") {
+        mappedStatus = "idle";
+      } else {
+        mappedStatus = status.status;
+      }
+
+      const nextError =
+        status.status === "failure"
+          ? status.error ?? state.execution.error
+          : status.status === "success"
+          ? undefined
+          : state.execution.error;
+
+      return {
+        execution: {
+          ...state.execution,
+          runId: status.runId,
+          status: mappedStatus,
+          loading: !isTerminal,
+          error: nextError,
+          steps: nextSteps,
+        },
+      };
+    }),
   setValidationMetadata: (metadata) => {
     set({ validationMetadata: metadata });
     get().runValidation();

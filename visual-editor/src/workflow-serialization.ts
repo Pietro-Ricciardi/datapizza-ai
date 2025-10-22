@@ -11,8 +11,16 @@ import {
   type WorkflowValidationResponse,
 } from "./workflow-format";
 
-export type WorkflowDefinitionWithArbitraryVersion = Omit<WorkflowDefinition, "version"> & {
+type WorkflowMetadataWithLegacyTags = Omit<WorkflowMetadata, "tags"> & {
+  tags?: WorkflowMetadata["tags"] | string;
+};
+
+export type WorkflowDefinitionWithArbitraryVersion = Omit<
+  WorkflowDefinition,
+  "version" | "metadata"
+> & {
   version: string;
+  metadata: WorkflowMetadataWithLegacyTags;
 };
 
 interface WorkflowMigrationStep {
@@ -29,12 +37,12 @@ const WORKFLOW_MIGRATIONS: Record<string, WorkflowMigrationStep> = {
     to: WORKFLOW_FORMAT_VERSION,
     migrate: (workflow) => {
       const migrated = cloneSerializable(workflow);
-      const nextTags = migrated.metadata?.tags;
+      const rawTags = migrated.metadata?.tags as unknown;
 
-      if (Array.isArray(nextTags)) {
-        migrated.metadata.tags = nextTags.filter((tag) => typeof tag === "string" && tag.trim().length > 0);
-      } else if (typeof nextTags === "string") {
-        migrated.metadata.tags = nextTags
+      if (Array.isArray(rawTags)) {
+        migrated.metadata.tags = rawTags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0);
+      } else if (typeof rawTags === "string") {
+        migrated.metadata.tags = rawTags
           .split(",")
           .map((tag) => tag.trim())
           .filter((tag) => tag.length > 0);

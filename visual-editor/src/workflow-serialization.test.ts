@@ -120,11 +120,11 @@ describe("workflow-serialization", () => {
           data: {
             label: "Nodo complesso",
             component: "datapizza.complex.component",
-            parameters: new Map([
+            parameters: new Map<string, unknown>([
               ["thresholds", new Set([0.2, 0.8])],
               [
                 "metadata",
-                new Map([
+                new Map<string, unknown>([
                   ["window", { start: new Date("2024-05-01T12:00:00.000Z"), durationMinutes: 15 }],
                   ["tags", ["raw", "ingestion"]],
                 ]),

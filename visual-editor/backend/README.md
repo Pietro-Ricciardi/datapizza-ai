@@ -56,6 +56,21 @@ L'applicazione invoca `configure_base_environment()` in fase di startup per appl
 
 L'endpoint di esecuzione accetta ora sia il payload storico (solo il workflow) sia un oggetto strutturato `{ "workflow": ..., "options": ... }`. Il campo `options` segue il modello `WorkflowRuntimeOptions` e consente di specificare profili nominati (`environment`), percorsi addizionali, variabili/credenziali temporanee e override di configurazione che vengono serializzati in `DATAPIZZA_RUNTIME_CONFIG_OVERRIDES` per essere letti dai componenti Python.【F:visual-editor/backend/app/main.py†L113-L138】【F:visual-editor/backend/app/models.py†L267-L319】【F:visual-editor/backend/app/settings.py†L110-L153】 Il risultato di esecuzione include le informazioni runtime effettivamente utilizzate nel campo `outputs.runtime` per facilitare il debug lato frontend.【F:visual-editor/backend/app/main.py†L132-L138】
 
+## Esecuzione asincrona e polling delle run
+
+Oltre all'esecuzione sincrona, il backend mock espone un orchestratore in-memory (`WorkflowRunStore`) che accoda le run, ne traccia lo stato e mette a disposizione log incrementali pensati per lo streaming lato frontend.【F:visual-editor/backend/app/run_manager.py†L1-L222】 Ogni run mantiene uno snapshot indipendente del workflow e delle opzioni runtime, così i retry non dipendono dallo stato corrente dell'editor.【F:visual-editor/backend/app/run_manager.py†L62-L118】 Gli eventi emessi dagli executor vengono convertiti in aggiornamenti di step e log strutturati con cursore progressivo, permettendo polling efficienti dal client.【F:visual-editor/backend/app/run_manager.py†L122-L210】【F:visual-editor/backend/app/executor.py†L44-L236】
+
+Gli endpoint esposti in `main.py` seguono questa semantica：【F:visual-editor/backend/app/main.py†L140-L245】
+
+- `POST /workflow/runs`: accoda una nuova esecuzione asincrona e restituisce `runId`, stato iniziale e metadati dell'orchestrazione.
+- `GET /workflow/runs`: restituisce la timeline delle run (attive per default, includendo le archiviate con `?include_archived=true`).
+- `GET /workflow/runs/{runId}`: fornisce lo stato corrente, i dettagli dei singoli step e l'esito finale (quando disponibile).
+- `GET /workflow/runs/{runId}/logs?after=<cursor>`: consegna i log progressivi successivi al cursore passato (o tutti se assente) insieme al nuovo cursore `nextCursor` da utilizzare per polling successivi.
+- `POST /workflow/runs/{runId}/retry`: reinserisce in coda la definizione originale sfruttando lo stesso executor (mock o remoto) configurato per l'istanza corrente.【F:visual-editor/backend/app/main.py†L226-L238】【F:visual-editor/backend/app/run_manager.py†L84-L109】
+- `POST /workflow/runs/{runId}/archive`: marca la run come archiviata così da escluderla dalle liste attive mantenendone comunque la consultabilità storica.【F:visual-editor/backend/app/main.py†L240-L245】【F:visual-editor/backend/app/run_manager.py†L109-L119】
+
+Grazie a questo contratto il frontend può implementare timeline, pulsanti di retry e download artefatti basandosi su run persistite localmente durante la sessione, senza richiedere infrastruttura esterna o storage condiviso.
+
 ## Dipendenze Python
 
 Il file `requirements.txt` contiene ora, oltre a FastAPI e Pydantic, le librerie richieste dal backend (inclusi `httpx` per l'esecutore remoto e `structlog` per il logging strutturato) e i pacchetti Datapizza necessari per eseguire realmente i workflow orchestrati dal visual editor (core, parser, reranker, tool e vectorstore).【F:visual-editor/backend/requirements.txt†L1-L20】 Installarli con `pip install -r requirements.txt` garantisce la disponibilità dei componenti Python caricati dall'esecutore senza dover configurare manualmente i singoli moduli.

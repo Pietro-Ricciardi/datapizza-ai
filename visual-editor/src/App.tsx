@@ -21,10 +21,10 @@ import "./App.css";
 import "reactflow/dist/style.css";
 import {
   WORKFLOW_FORMAT_VERSION,
+  type WorkflowDefinition,
   type WorkflowMetadata,
   type WorkflowRuntimeOptions,
 } from "./workflow-format";
-import { useWorkflowStore } from "./store/workflow-store";
 import {
   initializeWorkflowStoreFromDefinition,
   serializeWorkflowFromStore,
@@ -36,8 +36,20 @@ import {
   executeWorkflow,
   validateWorkflowDefinition,
   WorkflowApiError,
+  fetchWorkflowRunLogs,
+  archiveWorkflowRun,
+  type ExecuteWorkflowPayload,
+  type WorkflowRunLogEntry,
+  type WorkflowRunLogResponse,
+  type WorkflowRunStatusResponse,
 } from "./services/workflow-api";
 import { NodeInspector } from "./components/NodeInspector";
+import {
+  useWorkflowStore,
+  type WorkflowRunHistoryItem,
+} from "./store/workflow-store";
+import { ExecutionHistoryTimeline, type TimelineFilter } from "./components/ExecutionHistoryTimeline";
+import { LogViewer } from "./components/LogViewer";
 import {
   InputValidationNode,
   OutputValidationNode,
@@ -467,6 +479,11 @@ function WorkflowApp(): JSX.Element {
   const completeExecution = useWorkflowStore((state) => state.completeExecution);
   const failExecution = useWorkflowStore((state) => state.failExecution);
   const resetExecution = useWorkflowStore((state) => state.resetExecution);
+  const history = useWorkflowStore((state) => state.history);
+  const addHistoryRun = useWorkflowStore((state) => state.addHistoryRun);
+  const updateHistoryRun = useWorkflowStore((state) => state.updateHistoryRun);
+  const archiveHistoryEntry = useWorkflowStore((state) => state.archiveHistoryRun);
+  const updateExecutionFromRun = useWorkflowStore((state) => state.updateExecutionFromRun);
   const validation = useWorkflowStore((state) => state.validation);
   const setValidationMetadataStore = useWorkflowStore((state) => state.setValidationMetadata);
 
@@ -510,6 +527,11 @@ function WorkflowApp(): JSX.Element {
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | undefined>(undefined);
   const [validationState, setValidationState] = useState<ValidationState>({ status: "idle", issues: [] });
+  const [selectedRunId, setSelectedRunId] = useState<string | undefined>();
+  const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
+  const [logsByRun, setLogsByRun] = useState<Record<string, WorkflowRunLogEntry[]>>({});
+  const [logCursorByRun, setLogCursorByRun] = useState<Record<string, number>>({});
+  const [logsLoadingRunId, setLogsLoadingRunId] = useState<string | undefined>(undefined);
 
   const nodeValidationSummaries = useMemo(() => {
     const summaries = new Map<string, NodeValidationSummary>();
@@ -530,6 +552,63 @@ function WorkflowApp(): JSX.Element {
 
     return summaries;
   }, [validation.issues]);
+
+  const appendLogChunk = useCallback(
+    (chunk: WorkflowRunLogResponse) => {
+      setLogCursorByRun((prev) => ({ ...prev, [chunk.runId]: chunk.nextCursor }));
+      if (chunk.logs.length === 0) {
+        return;
+      }
+      setLogsByRun((prev) => {
+        const current = prev[chunk.runId] ?? [];
+        const seen = new Set(current.map((entry) => entry.id));
+        const merged = [...current];
+        chunk.logs.forEach((entry) => {
+          if (!seen.has(entry.id)) {
+            merged.push(entry);
+            seen.add(entry.id);
+          }
+        });
+        merged.sort((a, b) => a.sequence - b.sequence);
+        return { ...prev, [chunk.runId]: merged };
+      });
+    },
+    [],
+  );
+
+  const ensureLogsLoaded = useCallback(
+    async (runId: string) => {
+      if ((logsByRun[runId]?.length ?? 0) > 0) {
+        return;
+      }
+      setLogsLoadingRunId(runId);
+      try {
+        const chunk = await fetchWorkflowRunLogs(runId);
+        appendLogChunk(chunk);
+      } catch (error) {
+        console.error("Errore durante il recupero dei log del workflow", error);
+      } finally {
+        setLogsLoadingRunId((current) => (current === runId ? undefined : current));
+      }
+    },
+    [appendLogChunk, logsByRun],
+  );
+
+  useEffect(() => {
+    if (!selectedRunId) {
+      return;
+    }
+    void ensureLogsLoaded(selectedRunId);
+  }, [selectedRunId, ensureLogsLoaded]);
+
+  const selectedRun = useMemo(
+    () => history.find((run) => run.runId === selectedRunId),
+    [history, selectedRunId],
+  );
+
+  const selectedLogs = selectedRunId ? logsByRun[selectedRunId] ?? [] : [];
+
+  const isLogLoading = logsLoadingRunId === selectedRunId;
 
   const nodeTypes = useMemo(
     () => ({
@@ -910,6 +989,87 @@ function WorkflowApp(): JSX.Element {
     return statusLabels.idle;
   }, [execution.loading, execution.status]);
 
+  const performExecution = useCallback(
+    async (
+      payload: ExecuteWorkflowPayload,
+      historyContext: {
+        definition: WorkflowDefinition;
+        options?: WorkflowRuntimeOptions;
+        workflowName: string;
+      },
+    ) => {
+      startExecution();
+      let hasHistoryEntry = false;
+      let lastStatus: WorkflowRunStatusResponse | undefined;
+      try {
+        const result = await executeWorkflow(payload, {
+          streaming: true,
+          onStatusUpdate: (status) => {
+            lastStatus = status;
+            updateExecutionFromRun(status);
+            if (!hasHistoryEntry) {
+              addHistoryRun({
+                runId: status.runId,
+                status: status.status,
+                createdAt: status.createdAt,
+                updatedAt: status.updatedAt,
+                workflowName: historyContext.workflowName,
+                archived: status.archived,
+                definition: historyContext.definition,
+                options: historyContext.options,
+                result: status.result,
+                error: status.error,
+              });
+              hasHistoryEntry = true;
+              setSelectedRunId(status.runId);
+              setLogsByRun((prev) => ({ ...prev, [status.runId]: [] }));
+              setLogCursorByRun((prev) => ({ ...prev, [status.runId]: 0 }));
+            } else {
+              updateHistoryRun(status.runId, {
+                status: status.status,
+                updatedAt: status.updatedAt,
+                result: status.result,
+                error: status.error,
+                archived: status.archived,
+              });
+            }
+          },
+          onLogs: appendLogChunk,
+        });
+        completeExecution(result);
+        if (result.status === "failure" && lastStatus?.error) {
+          failExecution(lastStatus.error);
+        }
+        updateHistoryRun(result.runId, {
+          status: result.status,
+          updatedAt: new Date().toISOString(),
+          result,
+        });
+      } catch (error) {
+        const message =
+          error instanceof WorkflowApiError
+            ? error.message
+            : error instanceof DOMException && error.name === "AbortError"
+            ? "Esecuzione annullata dall'utente"
+            : "Errore imprevisto durante l'esecuzione del workflow";
+        failExecution(message);
+        throw error;
+      }
+    },
+    [
+      startExecution,
+      updateExecutionFromRun,
+      addHistoryRun,
+      setSelectedRunId,
+      setLogsByRun,
+      setLogCursorByRun,
+      updateHistoryRun,
+      completeExecution,
+      failExecution,
+      appendLogChunk,
+    ],
+  );
+
   const nodeStatuses = useMemo(() => {
     return nodes.map((node) => {
       const step = execution.steps[node.id];
@@ -933,48 +1093,117 @@ function WorkflowApp(): JSX.Element {
   );
 
   const runWorkflow = useCallback(async () => {
-    startExecution();
+    const snapshot = createWorkflowSnapshot();
+
+    const trimmedEnvironment = runtimeEnvironment.trim();
+    const overrides: Record<string, unknown> = {};
+    const trimmedDataset = datasetUri.trim();
+    if (trimmedDataset) {
+      overrides.dataset = createResourceReference(trimmedDataset);
+    }
+
+    const runtimeOptions: WorkflowRuntimeOptions = {};
+    if (trimmedEnvironment) {
+      runtimeOptions.environment = trimmedEnvironment;
+    }
+    if (Object.keys(overrides).length > 0) {
+      runtimeOptions.configOverrides = overrides;
+    }
+
+    const payload: ExecuteWorkflowPayload = { workflow: snapshot };
+    const hasRuntimeOptions = Object.keys(runtimeOptions).length > 0;
+    if (hasRuntimeOptions) {
+      payload.options = runtimeOptions;
+    }
+
+    const definitionForHistory = JSON.parse(JSON.stringify(snapshot)) as WorkflowDefinition;
+    const optionsForHistory = hasRuntimeOptions
+      ? (JSON.parse(JSON.stringify(runtimeOptions)) as WorkflowRuntimeOptions)
+      : undefined;
 
     try {
-      const snapshot = createWorkflowSnapshot();
-
-      const trimmedEnvironment = runtimeEnvironment.trim();
-      const overrides: Record<string, unknown> = {};
-      const trimmedDataset = datasetUri.trim();
-      if (trimmedDataset) {
-        overrides.dataset = createResourceReference(trimmedDataset);
-      }
-
-      const runtimeOptions: WorkflowRuntimeOptions = {};
-      if (trimmedEnvironment) {
-        runtimeOptions.environment = trimmedEnvironment;
-      }
-      if (Object.keys(overrides).length > 0) {
-        runtimeOptions.configOverrides = overrides;
-      }
-
-      const result = await executeWorkflow({
-        workflow: snapshot,
-        ...(Object.keys(runtimeOptions).length > 0 ? { options: runtimeOptions } : {}),
+      await performExecution(payload, {
+        definition: definitionForHistory,
+        options: optionsForHistory,
+        workflowName: workflowMetadata.name,
       });
-
-      completeExecution(result);
     } catch (error) {
       console.error("Errore durante l'esecuzione del workflow", error);
-      const message =
-        error instanceof WorkflowApiError
-          ? error.message
-          : "Errore imprevisto durante l'esecuzione del workflow";
-      failExecution(message);
     }
   }, [
-    datasetUri,
     createWorkflowSnapshot,
     runtimeEnvironment,
-    startExecution,
-    completeExecution,
-    failExecution,
+    datasetUri,
+    performExecution,
+    workflowMetadata.name,
   ]);
+
+  const handleRetry = useCallback(
+    async (run: WorkflowRunHistoryItem) => {
+      const definitionClone = JSON.parse(JSON.stringify(run.definition)) as WorkflowDefinition;
+      const optionsClone = run.options
+        ? (JSON.parse(JSON.stringify(run.options)) as WorkflowRuntimeOptions)
+        : undefined;
+      const payload: ExecuteWorkflowPayload = { workflow: definitionClone };
+      if (optionsClone && Object.keys(optionsClone).length > 0) {
+        payload.options = optionsClone;
+      }
+
+      try {
+        await performExecution(payload, {
+          definition: definitionClone,
+          options: optionsClone,
+          workflowName: run.workflowName,
+        });
+      } catch (error) {
+        console.error("Errore durante il retry dell'esecuzione", error);
+      }
+    },
+    [performExecution],
+  );
+
+  const handleDownloadArtifacts = useCallback((run: WorkflowRunHistoryItem) => {
+    if (!run.result) {
+      return;
+    }
+    const blob = new Blob([JSON.stringify(run.result.outputs ?? {}, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${slugify(run.workflowName)}-${run.runId}-artifacts.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleArchiveRun = useCallback(
+    async (run: WorkflowRunHistoryItem) => {
+      if (run.archived) {
+        return;
+      }
+      try {
+        const summary = await archiveWorkflowRun(run.runId);
+        archiveHistoryEntry(run.runId);
+        updateHistoryRun(run.runId, {
+          status: summary.status,
+          updatedAt: summary.updatedAt,
+          archived: summary.archived,
+        });
+      } catch (error) {
+        console.error("Errore durante l'archiviazione dell'esecuzione", error);
+      }
+    },
+    [archiveHistoryEntry, updateHistoryRun],
+  );
+
+  const handleSelectRun = useCallback((runId: string) => {
+    setSelectedRunId(runId);
+  }, []);
+
+  const handleFilterChange = useCallback((value: TimelineFilter) => {
+    setTimelineFilter(value);
+  }, []);
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === "light" ? "dark" : "light"));
@@ -1307,19 +1536,45 @@ function WorkflowApp(): JSX.Element {
                 <dt>Stato</dt>
                 <dd>{workflowStatusLabel}</dd>
               </div>
-              {execution.runId ? (
-                <div>
-                  <dt>Run ID</dt>
-                  <dd>{execution.runId}</dd>
-                </div>
-              ) : null}
-            </dl>
-          </SidebarSection>
+          {execution.runId ? (
+            <div>
+              <dt>Run ID</dt>
+              <dd>{execution.runId}</dd>
+            </div>
+          ) : null}
+        </dl>
+      </SidebarSection>
 
-          <SidebarSection
-            id="node-details"
-            title="Dettagli nodo"
-            description="Seleziona un nodo dal canvas per modificarne label, tipo e parametri JSON."
+      <SidebarSection
+        id="workflow-history"
+        title="Cronologia esecuzioni"
+        description="Consulta le esecuzioni precedenti, ripetile e scarica gli artefatti generati."
+      >
+        <ExecutionHistoryTimeline
+          runs={history}
+          filter={timelineFilter}
+          onFilterChange={handleFilterChange}
+          selectedRunId={selectedRunId}
+          onSelectRun={handleSelectRun}
+          onRetry={handleRetry}
+          onDownload={handleDownloadArtifacts}
+          onArchive={handleArchiveRun}
+        />
+        <LogViewer
+          logs={selectedLogs}
+          loading={isLogLoading}
+          emptyMessage={
+            selectedRun
+              ? "Nessun log disponibile per questa esecuzione."
+              : "Seleziona una run per visualizzare i log in streaming."
+          }
+        />
+      </SidebarSection>
+
+      <SidebarSection
+        id="node-details"
+        title="Dettagli nodo"
+        description="Seleziona un nodo dal canvas per modificarne label, tipo e parametri JSON."
           >
             {selectedNode ? (
               <NodeInspector node={selectedNode} />

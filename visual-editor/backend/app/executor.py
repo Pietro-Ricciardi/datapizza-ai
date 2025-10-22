@@ -6,7 +6,7 @@ import time
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
-from typing import Any, Deque, Dict, Iterable, List, Mapping, Tuple
+from typing import Any, Callable, Deque, Dict, Iterable, List, Mapping, Tuple
 from uuid import uuid4
 
 import httpx
@@ -72,6 +72,7 @@ class DatapizzaWorkflowExecutor:
         workflow: WorkflowDefinition,
         *,
         options: WorkflowRuntimeOptions | None = None,
+        observer: Callable[[Dict[str, object]], None] | None = None,
     ) -> WorkflowExecutionResult:
         run_id = f"run_{uuid4().hex[:8]}"
         steps: List[WorkflowExecutionStep] = []
@@ -93,6 +94,13 @@ class DatapizzaWorkflowExecutor:
             max_workers=self.max_workers,
         )
 
+        def emit(event_type: str, **payload: object) -> None:
+            if observer is None:
+                return
+            event: Dict[str, object] = {"type": event_type}
+            event.update(payload)
+            observer(event)
+
         try:
             execution_order, incoming = self._build_execution_plan(workflow)
         except ValueError as exc:
@@ -102,6 +110,21 @@ class DatapizzaWorkflowExecutor:
             run_logger.exception(
                 "workflow_execution_plan_failed",
                 message=message,
+            )
+            failure_timestamp = datetime.utcnow().isoformat() + "Z"
+            emit(
+                "log",
+                level="error",
+                message=message,
+                nodeId="__workflow__",
+                timestamp=failure_timestamp,
+            )
+            emit(
+                "step",
+                nodeId="__workflow__",
+                status="failed",
+                details=message,
+                timestamp=failure_timestamp,
             )
             steps.append(
                 WorkflowExecutionStep(
@@ -132,6 +155,21 @@ class DatapizzaWorkflowExecutor:
                     "workflow_step_missing_component",
                     message=message,
                 )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
+                )
                 steps.append(
                     WorkflowExecutionStep(
                         nodeId=node.id,
@@ -150,6 +188,20 @@ class DatapizzaWorkflowExecutor:
             step_logger = step_logger.bind(component=component_path)
             step_start = time.perf_counter()
             step_logger.info("workflow_step_started")
+            step_started_at = datetime.utcnow().isoformat() + "Z"
+            emit(
+                "log",
+                level="info",
+                message=f"Avvio nodo '{node.id}'",
+                nodeId=node.id,
+                timestamp=step_started_at,
+            )
+            emit(
+                "step",
+                nodeId=node.id,
+                status="running",
+                timestamp=step_started_at,
+            )
 
             try:
                 parameters = normalise_parameters((node.data or {}).get("parameters"))
@@ -160,6 +212,21 @@ class DatapizzaWorkflowExecutor:
                 step_logger.error(
                     "workflow_step_invalid_parameters",
                     message=message,
+                )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
                 )
                 steps.append(
                     WorkflowExecutionStep(
@@ -199,6 +266,21 @@ class DatapizzaWorkflowExecutor:
                     message=message,
                     missing_dependencies=missing_dependencies,
                 )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
+                )
                 steps.append(
                     WorkflowExecutionStep(
                         nodeId=node.id,
@@ -227,6 +309,21 @@ class DatapizzaWorkflowExecutor:
                 step_logger.exception(
                     "workflow_step_component_load_failed",
                     message=message,
+                )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
                 )
                 steps.append(
                     WorkflowExecutionStep(
@@ -260,6 +357,21 @@ class DatapizzaWorkflowExecutor:
                     message=message,
                     timeout_seconds=self.node_timeout,
                 )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
+                )
                 steps.append(
                     WorkflowExecutionStep(
                         nodeId=node.id,
@@ -286,6 +398,21 @@ class DatapizzaWorkflowExecutor:
                     "workflow_step_invocation_rejected",
                     message=message,
                 )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
+                )
                 steps.append(
                     WorkflowExecutionStep(
                         nodeId=node.id,
@@ -311,6 +438,21 @@ class DatapizzaWorkflowExecutor:
                 step_logger.exception(
                     "workflow_step_unexpected_error",
                     message=message,
+                )
+                failure_timestamp = datetime.utcnow().isoformat() + "Z"
+                emit(
+                    "log",
+                    level="error",
+                    message=message,
+                    nodeId=node.id,
+                    timestamp=failure_timestamp,
+                )
+                emit(
+                    "step",
+                    nodeId=node.id,
+                    status="failed",
+                    details=message,
+                    timestamp=failure_timestamp,
                 )
                 steps.append(
                     WorkflowExecutionStep(
@@ -517,6 +659,7 @@ class RemoteWorkflowExecutor:
         workflow: WorkflowDefinition,
         *,
         options: WorkflowRuntimeOptions | None = None,
+        observer: Callable[[Dict[str, object]], None] | None = None,
     ) -> WorkflowExecutionResult:
         run_start = time.perf_counter()
         payload: Dict[str, Any] = {"workflow": workflow.dict(by_alias=True)}
@@ -529,6 +672,13 @@ class RemoteWorkflowExecutor:
             node_count=len(workflow.nodes),
             timeout_seconds=self.timeout,
         )
+
+        def emit(event_type: str, **payload_data: object) -> None:
+            if observer is None:
+                return
+            event: Dict[str, object] = {"type": event_type}
+            event.update(payload_data)
+            observer(event)
 
         try:
             response = httpx.post(
@@ -543,6 +693,13 @@ class RemoteWorkflowExecutor:
             request_logger.exception(
                 "workflow_run_timeout",
                 duration_seconds=duration,
+            )
+            emit(
+                "log",
+                level="error",
+                message=f"Remote workflow execution timed out after {self.timeout:.1f}s",
+                timestamp=datetime.utcnow().isoformat() + "Z",
+                nodeId=None,
             )
             _record_execution_metrics(
                 mode=REMOTE_MODE,
@@ -561,6 +718,13 @@ class RemoteWorkflowExecutor:
                 status_code=status_code,
                 duration_seconds=duration,
             )
+            emit(
+                "log",
+                level="error",
+                message=f"Remote execution failed with status code {status_code}",
+                timestamp=datetime.utcnow().isoformat() + "Z",
+                nodeId=None,
+            )
             _record_execution_metrics(
                 mode=REMOTE_MODE,
                 status="failure",
@@ -578,6 +742,13 @@ class RemoteWorkflowExecutor:
             request_logger.exception(
                 "workflow_run_transport_error",
                 duration_seconds=duration,
+            )
+            emit(
+                "log",
+                level="error",
+                message="Remote execution failed due to a transport error",
+                timestamp=datetime.utcnow().isoformat() + "Z",
+                nodeId=None,
             )
             _record_execution_metrics(
                 mode=REMOTE_MODE,
@@ -608,6 +779,22 @@ class RemoteWorkflowExecutor:
             ) from exc
 
         result = WorkflowExecutionResult.parse_obj(result_payload)
+        timestamp = datetime.utcnow().isoformat() + "Z"
+        emit(
+            "log",
+            level="info",
+            message="Risposta ricevuta dal backend remoto",
+            timestamp=timestamp,
+            nodeId=None,
+        )
+        for step in result.steps:
+            emit(
+                "step",
+                nodeId=step.nodeId,
+                status=step.status,
+                details=step.details,
+                timestamp=timestamp,
+            )
         duration = time.perf_counter() - run_start
         error_attributes: Dict[str, object] | None = None
         if result.status != "success":
