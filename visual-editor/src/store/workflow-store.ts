@@ -9,6 +9,11 @@ import {
   type Node,
   type NodeChange,
 } from "reactflow";
+import {
+  type WorkflowExecutionResult,
+  type WorkflowExecutionResultStatus,
+  type WorkflowExecutionStep,
+} from "../workflow-format";
 
 type WorkflowState = {
   nodes: Node[];
@@ -24,9 +29,43 @@ type WorkflowActions = {
   onConnect: (connection: Connection | Edge) => void;
 };
 
-export const useWorkflowStore = create<WorkflowState & WorkflowActions>((set) => ({
+type WorkflowExecutionStatus = WorkflowExecutionResultStatus | "idle";
+
+interface WorkflowExecutionContext {
+  runId?: string;
+  status: WorkflowExecutionStatus;
+  loading: boolean;
+  error?: string;
+  steps: Record<string, WorkflowExecutionStep>;
+  outputs?: Record<string, unknown>;
+}
+
+type WorkflowExecutionActions = {
+  startExecution: () => void;
+  completeExecution: (result: WorkflowExecutionResult) => void;
+  failExecution: (message: string) => void;
+  resetExecution: () => void;
+};
+
+type WorkflowExecutionState = {
+  execution: WorkflowExecutionContext;
+};
+
+const createDefaultExecutionState = (): WorkflowExecutionContext => ({
+  runId: undefined,
+  status: "idle",
+  loading: false,
+  error: undefined,
+  steps: {},
+  outputs: undefined,
+});
+
+export const useWorkflowStore = create<
+  WorkflowState & WorkflowActions & WorkflowExecutionState & WorkflowExecutionActions
+>((set) => ({
   nodes: [],
   edges: [],
+  execution: createDefaultExecutionState(),
   initialize: (nodes, edges) =>
     set({
       nodes: nodes.map((node) => ({ ...node })),
@@ -53,4 +92,53 @@ export const useWorkflowStore = create<WorkflowState & WorkflowActions>((set) =>
         state.edges,
       ),
     })),
+  startExecution: () =>
+    set((state) => {
+      const pendingSteps: Record<string, WorkflowExecutionStep> = {};
+      state.nodes.forEach((node) => {
+        pendingSteps[node.id] = {
+          nodeId: node.id,
+          status: "pending",
+        };
+      });
+
+      return {
+        execution: {
+          runId: undefined,
+          status: "idle",
+          loading: true,
+          error: undefined,
+          outputs: undefined,
+          steps: pendingSteps,
+        },
+      };
+    }),
+  completeExecution: (result) =>
+    set((state) => {
+      const steps = { ...state.execution.steps };
+      result.steps.forEach((step) => {
+        steps[step.nodeId] = step;
+      });
+
+      return {
+        execution: {
+          runId: result.runId,
+          status: result.status,
+          loading: false,
+          error: undefined,
+          outputs: result.outputs,
+          steps,
+        },
+      };
+    }),
+  failExecution: (message) =>
+    set((state) => ({
+      execution: {
+        ...state.execution,
+        loading: false,
+        status: "failure",
+        error: message,
+      },
+    })),
+  resetExecution: () => set({ execution: createDefaultExecutionState() }),
 }));
