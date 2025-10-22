@@ -292,5 +292,53 @@ class WorkflowExecutionResult(BaseModel):
     outputs: Dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkflowRunStepStatus(BaseModel):
+    """Aggregated step information exposed when polling run status."""
+
+    nodeId: str
+    status: Literal["pending", "running", "completed", "failed"]
+    details: Optional[str] = None
+    startedAt: Optional[str] = None
+    completedAt: Optional[str] = None
+
+
+class WorkflowRunSummary(BaseModel):
+    """Lightweight representation of a workflow run for history timelines."""
+
+    runId: str
+    status: Literal["pending", "running", "success", "failure"]
+    createdAt: str
+    updatedAt: str
+    workflowName: str
+    archived: bool = False
+
+
+class WorkflowRunStatusResponse(WorkflowRunSummary):
+    """Detailed status payload returned when polling a specific run."""
+
+    steps: List[WorkflowRunStepStatus] = Field(default_factory=list)
+    result: Optional[WorkflowExecutionResult] = None
+    error: Optional[str] = None
+
+
+class WorkflowRunLogEntry(BaseModel):
+    """Represents a single log line captured during workflow execution."""
+
+    id: str
+    sequence: int
+    timestamp: str
+    message: str
+    level: Literal["info", "warning", "error"] = "info"
+    nodeId: Optional[str] = None
+
+
+class WorkflowRunLogResponse(BaseModel):
+    """Chunk of workflow logs returned during polling."""
+
+    runId: str
+    logs: List[WorkflowRunLogEntry] = Field(default_factory=list)
+    nextCursor: int
+
+
 class WorkflowSchemaResponse(BaseModel):
     schema: Dict[str, Any]

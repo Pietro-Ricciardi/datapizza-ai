@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
@@ -18,12 +18,16 @@ from .models import (
     WorkflowDefinition,
     WorkflowExecutionResult,
     WorkflowExecutionRequest,
+    WorkflowRunLogResponse,
+    WorkflowRunStatusResponse,
+    WorkflowRunSummary,
     WorkflowRuntimeOptions,
     WorkflowSchemaResponse,
     WorkflowValidationResponse,
 )
 from .observability import configure_observability, shutdown_observability
 from .settings import AppSettings, get_settings, runtime_configuration
+from .run_manager import WorkflowRunStore
 
 app = FastAPI(
     title="Datapizza Visual Editor Backend",
@@ -41,6 +45,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+run_store = WorkflowRunStore()
 
 
 @lru_cache(maxsize=1)
@@ -213,6 +219,96 @@ def execute_workflow(payload: Dict[str, Any] = Body(...)) -> WorkflowExecutionRe
             runtime_metadata["configOverrides"] = dict(options.configOverrides)
 
     return result
+
+
+@app.post(
+    "/workflow/runs",
+    response_model=WorkflowRunStatusResponse,
+    tags=["workflow"],
+    summary="Enqueue an asynchronous workflow execution run",
+)
+def start_workflow_run(payload: Dict[str, Any] = Body(...)) -> WorkflowRunStatusResponse:
+    settings = get_settings()
+    workflow, options = _parse_execution_request(payload)
+    executor = _resolve_executor(settings)
+
+    try:
+        return run_store.start_run(workflow, options, executor)
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get(
+    "/workflow/runs",
+    response_model=List[WorkflowRunSummary],
+    tags=["workflow"],
+    summary="List workflow runs tracked by the mock backend",
+)
+def list_workflow_runs(
+    include_archived: bool = Query(False, description="Return also archived runs"),
+) -> List[WorkflowRunSummary]:
+    return run_store.list_runs(include_archived=include_archived)
+
+
+@app.get(
+    "/workflow/runs/{run_id}",
+    response_model=WorkflowRunStatusResponse,
+    tags=["workflow"],
+    summary="Fetch the status of a specific workflow run",
+)
+def get_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
+    try:
+        return run_store.get_status(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found") from exc
+
+
+@app.get(
+    "/workflow/runs/{run_id}/logs",
+    response_model=WorkflowRunLogResponse,
+    tags=["workflow"],
+    summary="Fetch incremental logs for a workflow run",
+)
+def get_workflow_run_logs(
+    run_id: str,
+    after: Optional[int] = Query(
+        None,
+        description="Return log entries with sequence strictly greater than this cursor",
+        ge=0,
+    ),
+) -> WorkflowRunLogResponse:
+    try:
+        return run_store.get_logs(run_id, after=after)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found") from exc
+
+
+@app.post(
+    "/workflow/runs/{run_id}/retry",
+    response_model=WorkflowRunStatusResponse,
+    tags=["workflow"],
+    summary="Retry a workflow run using the original definition",
+)
+def retry_workflow_run(run_id: str) -> WorkflowRunStatusResponse:
+    settings = get_settings()
+    executor = _resolve_executor(settings)
+    try:
+        return run_store.retry_run(run_id, executor)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found") from exc
+
+
+@app.post(
+    "/workflow/runs/{run_id}/archive",
+    response_model=WorkflowRunSummary,
+    tags=["workflow"],
+    summary="Archive a workflow run so it no longer appears in active lists",
+)
+def archive_workflow_run(run_id: str) -> WorkflowRunSummary:
+    try:
+        return run_store.archive_run(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found") from exc
 
 
 @app.get(

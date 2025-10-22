@@ -188,7 +188,12 @@ function isWorkflowResourceReference(value: unknown): value is WorkflowResourceR
     return false;
   }
 
-  const candidate = value as WorkflowResourceReferenceLike;
+  const candidate = value as {
+    uri?: unknown;
+    type?: unknown;
+    kind?: unknown;
+  } & Record<string, unknown>;
+
   if (typeof candidate.uri !== "string") {
     return false;
   }

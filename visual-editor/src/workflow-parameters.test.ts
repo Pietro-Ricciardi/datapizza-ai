@@ -9,13 +9,13 @@ import {
 describe("workflow-parameters", () => {
   it("normalises parameters with nested structures", () => {
     const parameters = normaliseParameters(
-      new Map([
+      new Map<string, unknown>([
         ["timestamp", new Date("2024-06-01T10:00:00.000Z")],
         ["endpoint", new URL("https://api.example.com/data")],
         ["flags", new Set([true, false])],
         [
           "extra",
-          new Map([
+          new Map<string, unknown>([
             ["retries", 3],
             ["regions", new Set(["eu", "us"])],
           ]),
