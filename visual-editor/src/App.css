@@ -316,6 +316,27 @@ html[data-theme="dark"] {
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
 }
 
+.form-field__textarea {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 9rem;
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+.form-field__textarea:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.22);
+}
+
 .inline-feedback {
   margin: 0;
   border-radius: var(--radius-sm);
@@ -326,6 +347,31 @@ html[data-theme="dark"] {
 .inline-feedback--error {
   background: var(--color-error-surface);
   color: var(--color-error-text);
+}
+
+.node-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.node-inspector__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.node-inspector__component {
+  margin: 0;
+  padding: var(--space-sm);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--color-border);
+  background: var(--color-surface-alt);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  word-break: break-word;
 }
 
 .meta-grid {
