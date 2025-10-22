@@ -1000,6 +1000,10 @@ html[data-theme="dark"] {
   gap: var(--space-sm);
 }
 
+.status-list--virtualized {
+  display: block;
+}
+
 .status-list__item {
   border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);

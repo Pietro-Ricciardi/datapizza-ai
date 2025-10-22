@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import type { Node } from "reactflow";
 import { type WorkflowNodeKind } from "../workflow-format";
-import { useWorkflowStore } from "../store/workflow-store";
+import { useWorkflowStore, workflowSelectors } from "../store/workflow-store";
 
 type NodeInspectorProps = {
   node: Node;
@@ -70,9 +70,9 @@ function parseParameters(source: string): Record<string, unknown> | undefined {
 }
 
 export function NodeInspector({ node }: NodeInspectorProps): JSX.Element {
-  const updateNodeLabel = useWorkflowStore((state) => state.updateNodeLabel);
-  const updateNodeKind = useWorkflowStore((state) => state.updateNodeKind);
-  const updateNodeParameters = useWorkflowStore((state) => state.updateNodeParameters);
+  const updateNodeLabel = useWorkflowStore(workflowSelectors.updateNodeLabel);
+  const updateNodeKind = useWorkflowStore(workflowSelectors.updateNodeKind);
+  const updateNodeParameters = useWorkflowStore(workflowSelectors.updateNodeParameters);
 
   const [label, setLabel] = useState(() => getNodeLabel(node));
   const [labelError, setLabelError] = useState<FieldError>();
