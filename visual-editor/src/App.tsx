@@ -1,10 +1,24 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Background, Controls, MiniMap, ReactFlow } from "reactflow";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type DragEvent,
+  type ReactNode,
+} from "react";
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  useReactFlow,
+  type Node,
+} from "reactflow";
 import "./App.css";
 import "reactflow/dist/style.css";
 import {
   WORKFLOW_FORMAT_VERSION,
-  type WorkflowDefinition,
   type WorkflowMetadata,
   type WorkflowRuntimeOptions,
 } from "./workflow-format";
@@ -16,8 +30,53 @@ import {
 import { createResourceReference } from "./workflow-parameters";
 import { executeWorkflow, WorkflowApiError } from "./services/workflow-api";
 import { NodeInspector } from "./components/NodeInspector";
+import {
+  NODE_TEMPLATES,
+  WORKFLOW_TEMPLATES,
+  WORKFLOW_TEMPLATE_CATEGORIES,
+  groupNodeTemplatesByCategory,
+  type NodeTemplate,
+  type WorkflowTemplate,
+} from "./data/workflow-templates";
+
+const NODE_TEMPLATE_MIME = "application/datapizza-workflow-node-template";
 
 type ThemeMode = "light" | "dark";
+
+type SidebarSectionProps = {
+  title: string;
+  description?: string;
+  children: ReactNode;
+  id?: string;
+};
+
+type AppHeaderProps = {
+  onExport: () => void;
+  onToggleTheme: () => void;
+  onToggleLibrary: () => void;
+  theme: ThemeMode;
+  activeTemplate: WorkflowTemplate;
+};
+
+type LibraryDrawerProps = {
+  open: boolean;
+  templates: WorkflowTemplate[];
+  activeTemplateId: string;
+  nodeGroups: ReturnType<typeof groupNodeTemplatesByCategory>;
+  onClose: () => void;
+  onApplyTemplate: (templateId: string) => void;
+  onNodeDragStart: (event: DragEvent<HTMLElement>, template: NodeTemplate) => void;
+};
+
+const statusLabels: Record<string, string> = {
+  idle: "In attesa",
+  pending: "In coda",
+  running: "In esecuzione",
+  completed: "Completato",
+  failed: "Fallito",
+};
+
+const initialTemplate = WORKFLOW_TEMPLATES[0];
 
 const getPreferredTheme = (): ThemeMode => {
   if (typeof window !== "undefined") {
@@ -29,11 +88,40 @@ const getPreferredTheme = (): ThemeMode => {
   return "light";
 };
 
-type SidebarSectionProps = {
-  title: string;
-  description?: string;
-  children: ReactNode;
-  id?: string;
+const mapWorkflowKindToNodeType = (kind: NodeTemplate["kind"]): Node["type"] => {
+  switch (kind) {
+    case "input":
+      return "input";
+    case "output":
+      return "output";
+    default:
+      return "default";
+  }
+};
+
+const cloneTemplateData = (
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> => {
+  if (!data) {
+    return {};
+  }
+  return JSON.parse(JSON.stringify(data)) as Record<string, unknown>;
+};
+
+const createUniqueNodeId = (baseId: string, nodes: Node[]): string => {
+  if (!nodes.some((node) => node.id === baseId)) {
+    return baseId;
+  }
+
+  let suffix = 1;
+  let candidate = `${baseId}-${suffix}`;
+
+  while (nodes.some((node) => node.id === candidate)) {
+    suffix += 1;
+    candidate = `${baseId}-${suffix}`;
+  }
+
+  return candidate;
 };
 
 function SidebarSection({ title, description, children, id }: SidebarSectionProps) {
@@ -48,13 +136,16 @@ function SidebarSection({ title, description, children, id }: SidebarSectionProp
   );
 }
 
-type AppHeaderProps = {
-  onExport: () => void;
-  onToggleTheme: () => void;
-  theme: ThemeMode;
-};
-
-function AppHeader({ onExport, onToggleTheme, theme }: AppHeaderProps) {
+function AppHeader({
+  onExport,
+  onToggleTheme,
+  onToggleLibrary,
+  theme,
+  activeTemplate,
+}: AppHeaderProps) {
+  const categoryInfo =
+    WORKFLOW_TEMPLATE_CATEGORIES[activeTemplate.category] ??
+    ({ label: activeTemplate.category, description: "" } as const);
   return (
     <header className="app__header" role="banner">
       <div className="app__header-layout">
@@ -64,8 +155,24 @@ function AppHeader({ onExport, onToggleTheme, theme }: AppHeaderProps) {
             Crea, orchestra e testa pipeline di machine learning con un canvas
             interattivo e pannelli contestuali pensati per team data-driven.
           </p>
+          <p className="app__header-template" aria-live="polite">
+            <span className="app__header-template-icon" aria-hidden>
+              {activeTemplate.icon}
+            </span>
+            <span>
+              Template attivo: <strong>{activeTemplate.name}</strong>
+            </span>
+            <span className="template-category-badge">{categoryInfo.label}</span>
+          </p>
         </div>
         <div className="app__header-actions">
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={onToggleLibrary}
+          >
+            Catalogo workflow
+          </button>
           <button className="button button--ghost" type="button" onClick={onToggleTheme}>
             Modalità {theme === "light" ? "scura" : "chiara"}
           </button>
@@ -78,91 +185,176 @@ function AppHeader({ onExport, onToggleTheme, theme }: AppHeaderProps) {
   );
 }
 
-const workflowMetadata: WorkflowMetadata = {
-  name: "ML Pipeline Demo",
-  description:
-    "Esempio di pipeline di machine learning composto da fasi sequenziali.",
-  tags: ["demo", "ml"],
-  author: { name: "Datapizza", email: "editor@datapizza.ai" },
-  createdAt: "2024-01-01T00:00:00.000Z",
-};
+function LibraryDrawer({
+  open,
+  templates,
+  activeTemplateId,
+  nodeGroups,
+  onClose,
+  onApplyTemplate,
+  onNodeDragStart,
+}: LibraryDrawerProps) {
+  return (
+    <aside
+      className={`library-drawer${open ? " library-drawer--open" : ""}`}
+      aria-hidden={!open}
+      aria-label="Catalogo template e nodi preconfigurati"
+      role="dialog"
+    >
+      <div className="library-drawer__header">
+        <div>
+          <p className="library-drawer__eyebrow">Libreria</p>
+          <h2 className="library-drawer__title">Workflow e nodi preconfigurati</h2>
+        </div>
+        <button
+          className="button button--ghost library-drawer__close"
+          type="button"
+          onClick={onClose}
+          aria-label="Chiudi catalogo"
+        >
+          Chiudi
+        </button>
+      </div>
+      <div className="library-drawer__content">
+        <section className="library-drawer__section">
+          <header>
+            <h3>Workflow predefiniti</h3>
+            <p>Applica un template per reimpostare rapidamente nodi ed archi.</p>
+          </header>
+          <div className="template-grid">
+            {templates.map((template) => {
+              const category =
+                WORKFLOW_TEMPLATE_CATEGORIES[template.category] ??
+                ({ label: template.category, description: "" } as const);
+              const isActive = template.id === activeTemplateId;
+              return (
+                <article
+                  key={template.id}
+                  className={`template-card${isActive ? " template-card--active" : ""}`}
+                >
+                  <div className="template-card__header">
+                    <span className="template-card__icon" aria-hidden>
+                      {template.icon}
+                    </span>
+                    <div>
+                      <h4>{template.name}</h4>
+                      <p>{template.description}</p>
+                    </div>
+                  </div>
+                  <div className="template-card__footer">
+                    <span className="template-card__badge">{category.label}</span>
+                    <button
+                      className="button button--ghost template-card__action"
+                      type="button"
+                      onClick={() => onApplyTemplate(template.id)}
+                    >
+                      {isActive ? "Ricarica" : "Applica"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+        <section className="library-drawer__section">
+          <header>
+            <h3>Nodi preconfigurati</h3>
+            <p>Trascina i nodi nel canvas per arricchire il workflow corrente.</p>
+          </header>
+          <div className="node-template-groups">
+            {Object.entries(nodeGroups).map(([categoryKey, nodes]) => {
+              if (nodes.length === 0) {
+                return null;
+              }
+              const category =
+                WORKFLOW_TEMPLATE_CATEGORIES[
+                  categoryKey as keyof typeof WORKFLOW_TEMPLATE_CATEGORIES
+                ] ?? { label: categoryKey, description: "" };
+              return (
+                <div key={categoryKey} className="node-template-group">
+                  <div className="node-template-group__header">
+                    <span className="node-template-group__badge">{category.label}</span>
+                    <p>{category.description}</p>
+                  </div>
+                  <div className="node-template-list">
+                    {nodes.map((node) => (
+                      <button
+                        key={node.id}
+                        type="button"
+                        className="node-template"
+                        draggable
+                        onDragStart={(event) => onNodeDragStart(event, node)}
+                      >
+                        <span className="node-template__icon" aria-hidden>
+                          {node.icon}
+                        </span>
+                        <span className="node-template__content">
+                          <span className="node-template__title">{node.label}</span>
+                          <span className="node-template__description">{node.description}</span>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+    </aside>
+  );
+}
 
-const initialWorkflow: WorkflowDefinition = {
-  version: WORKFLOW_FORMAT_VERSION,
-  metadata: workflowMetadata,
-  nodes: [
-    {
-      id: "start",
-      kind: "input",
-      label: "Inizio",
-      position: { x: 0, y: 0 },
-    },
-    {
-      id: "prepare",
-      kind: "task",
-      label: "Prepara dati",
-      position: { x: 0, y: 120 },
-      data: {
-        component: "datapizza.preprocessing.prepare",
-        parameters: { strategy: "standardize" },
-      },
-    },
-    {
-      id: "train",
-      kind: "task",
-      label: "Allena modello",
-      position: { x: 0, y: 240 },
-      data: {
-        component: "datapizza.training.fit",
-        parameters: { algorithm: "xgboost" },
-      },
-    },
-    {
-      id: "deploy",
-      kind: "output",
-      label: "Deploy",
-      position: { x: 0, y: 380 },
-      data: {
-        component: "datapizza.deployment.push",
-        parameters: { environment: "staging" },
-      },
-    },
-  ],
-  edges: [
-    { id: "e1", source: { nodeId: "start" }, target: { nodeId: "prepare" } },
-    { id: "e2", source: { nodeId: "prepare" }, target: { nodeId: "train" } },
-    { id: "e3", source: { nodeId: "train" }, target: { nodeId: "deploy" } },
-  ],
-};
+function WorkflowApp(): JSX.Element {
+  const { project, fitView, setViewport } = useReactFlow();
 
-const statusLabels: Record<string, string> = {
-  idle: "In attesa",
-  pending: "In coda",
-  running: "In esecuzione",
-  completed: "Completato",
-  failed: "Fallito",
-};
-
-function App(): JSX.Element {
   const nodes = useWorkflowStore((state) => state.nodes);
   const edges = useWorkflowStore((state) => state.edges);
   const onNodesChange = useWorkflowStore((state) => state.onNodesChange);
   const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange);
   const onConnect = useWorkflowStore((state) => state.onConnect);
+  const setNodes = useWorkflowStore((state) => state.setNodes);
   const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
   const selectNode = useWorkflowStore((state) => state.selectNode);
   const execution = useWorkflowStore((state) => state.execution);
   const startExecution = useWorkflowStore((state) => state.startExecution);
   const completeExecution = useWorkflowStore((state) => state.completeExecution);
   const failExecution = useWorkflowStore((state) => state.failExecution);
+  const resetExecution = useWorkflowStore((state) => state.resetExecution);
 
-  const [runtimeEnvironment, setRuntimeEnvironment] = useState("development");
-  const [datasetUri, setDatasetUri] = useState("s3://datasets/ml-pipeline.csv");
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const templateMap = useMemo(
+    () => new Map<string, WorkflowTemplate>(WORKFLOW_TEMPLATES.map((template) => [template.id, template])),
+    [],
+  );
+  const nodeTemplateMap = useMemo(
+    () => new Map<string, NodeTemplate>(NODE_TEMPLATES.map((template) => [template.id, template])),
+    [],
+  );
+  const nodeTemplateGroups = useMemo(() => groupNodeTemplatesByCategory(), []);
 
-  useEffect(() => {
-    initializeWorkflowStoreFromDefinition(initialWorkflow);
-  }, []);
+  const [activeTemplateId, setActiveTemplateId] = useState(initialTemplate.id);
+  const activeTemplate = useMemo(
+    () => templateMap.get(activeTemplateId) ?? initialTemplate,
+    [activeTemplateId, templateMap],
+  );
+  const templateCategoryInfo = useMemo(
+    () =>
+      WORKFLOW_TEMPLATE_CATEGORIES[activeTemplate.category] ?? {
+        label: activeTemplate.category,
+        description: "",
+      },
+    [activeTemplate.category],
+  );
+
+  const [workflowMetadata, setWorkflowMetadata] = useState<WorkflowMetadata>(
+    initialTemplate.definition.metadata,
+  );
+  const [runtimeEnvironment, setRuntimeEnvironment] = useState(
+    initialTemplate.runtimeDefaults?.environment ?? "",
+  );
+  const [datasetUri, setDatasetUri] = useState(initialTemplate.runtimeDefaults?.datasetUri ?? "");
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -194,17 +386,81 @@ function App(): JSX.Element {
     };
   }, []);
 
-  const exportWorkflow = useCallback(() => {
-    const snapshot = serializeWorkflowFromStore({
-      metadata: {
-        ...workflowMetadata,
-        updatedAt: new Date().toISOString(),
-      },
-      version: WORKFLOW_FORMAT_VERSION,
-    });
+  const loadTemplate = useCallback(
+    (template: WorkflowTemplate) => {
+      setWorkflowMetadata(template.definition.metadata);
+      setRuntimeEnvironment(template.runtimeDefaults?.environment ?? "");
+      setDatasetUri(template.runtimeDefaults?.datasetUri ?? "");
+      resetExecution();
 
-    console.info("Workflow serializzato", snapshot);
+      const reactFlowState = initializeWorkflowStoreFromDefinition(template.definition);
+
+      if (typeof window !== "undefined") {
+        window.requestAnimationFrame(() => {
+          if (reactFlowState?.viewport) {
+            setViewport(reactFlowState.viewport);
+          } else {
+            fitView({ padding: 0.2 });
+          }
+        });
+      }
+    },
+    [fitView, resetExecution, setDatasetUri, setRuntimeEnvironment, setViewport, setWorkflowMetadata],
+  );
+
+  useEffect(() => {
+    loadTemplate(activeTemplate);
+  }, [activeTemplate, loadTemplate]);
+
+  const onDropNodeTemplate = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      const templateId = event.dataTransfer.getData(NODE_TEMPLATE_MIME);
+      if (!templateId) {
+        return;
+      }
+      const template = nodeTemplateMap.get(templateId);
+      if (!template) {
+        return;
+      }
+
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const position = project({
+        x: event.clientX - bounds.left,
+        y: event.clientY - bounds.top,
+      });
+
+      const newId = createUniqueNodeId(template.id, nodes);
+      const data = cloneTemplateData(template.data);
+
+      const newNode: Node = {
+        id: newId,
+        type: mapWorkflowKindToNodeType(template.kind),
+        position,
+        data: {
+          ...data,
+          label: template.label,
+        },
+      };
+
+      setNodes([...nodes, newNode]);
+      selectNode(newId);
+    },
+    [nodeTemplateMap, nodes, project, selectNode, setNodes],
+  );
+
+  const onDragOverNodeTemplate = useCallback((event: DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
   }, []);
+
+  const onNodeTemplateDragStart = useCallback(
+    (event: DragEvent<HTMLElement>, template: NodeTemplate) => {
+      event.dataTransfer.setData(NODE_TEMPLATE_MIME, template.id);
+      event.dataTransfer.effectAllowed = "copyMove";
+    },
+    [],
+  );
 
   const workflowStatusLabel = useMemo(() => {
     if (execution.loading) {
@@ -235,6 +491,18 @@ function App(): JSX.Element {
     () => nodes.find((node) => node.id === selectedNodeId),
     [nodes, selectedNodeId],
   );
+
+  const exportWorkflow = useCallback(() => {
+    const snapshot = serializeWorkflowFromStore({
+      metadata: {
+        ...workflowMetadata,
+        updatedAt: new Date().toISOString(),
+      },
+      version: WORKFLOW_FORMAT_VERSION,
+    });
+
+    console.info("Workflow serializzato", snapshot);
+  }, [workflowMetadata]);
 
   const runWorkflow = useCallback(async () => {
     startExecution();
@@ -277,18 +545,63 @@ function App(): JSX.Element {
           : "Errore imprevisto durante l'esecuzione del workflow";
       failExecution(message);
     }
-  }, [runtimeEnvironment, datasetUri, startExecution, completeExecution, failExecution]);
+  }, [
+    datasetUri,
+    runtimeEnvironment,
+    workflowMetadata,
+    startExecution,
+    completeExecution,
+    failExecution,
+  ]);
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === "light" ? "dark" : "light"));
   }, []);
 
+  const toggleLibrary = useCallback(() => {
+    setIsLibraryOpen((open) => !open);
+  }, []);
+
+  const applyTemplate = useCallback(
+    (templateId: string) => {
+      const template = templateMap.get(templateId);
+      if (!template) {
+        return;
+      }
+      if (templateId === activeTemplateId) {
+        loadTemplate(template);
+      } else {
+        setActiveTemplateId(templateId);
+      }
+      setIsLibraryOpen(false);
+    },
+    [activeTemplateId, loadTemplate, templateMap],
+  );
+
   return (
     <div className="app" data-theme={theme}>
+      {isLibraryOpen ? (
+        <div
+          className="library-drawer__backdrop"
+          role="presentation"
+          onClick={() => setIsLibraryOpen(false)}
+        />
+      ) : null}
       <AppHeader
         onExport={exportWorkflow}
         onToggleTheme={toggleTheme}
+        onToggleLibrary={toggleLibrary}
         theme={theme}
+        activeTemplate={activeTemplate}
+      />
+      <LibraryDrawer
+        open={isLibraryOpen}
+        templates={WORKFLOW_TEMPLATES}
+        activeTemplateId={activeTemplateId}
+        nodeGroups={nodeTemplateGroups}
+        onClose={() => setIsLibraryOpen(false)}
+        onApplyTemplate={applyTemplate}
+        onNodeDragStart={onNodeTemplateDragStart}
       />
       <main className="app__layout">
         <section className="app__canvas" aria-label="Canvas del workflow">
@@ -307,6 +620,8 @@ function App(): JSX.Element {
             }}
             onPaneClick={() => selectNode(undefined)}
             proOptions={{ hideAttribution: true }}
+            onDrop={onDropNodeTemplate}
+            onDragOver={onDragOverNodeTemplate}
           >
             <MiniMap zoomable pannable />
             <Controls showInteractive={false} />
@@ -314,6 +629,46 @@ function App(): JSX.Element {
           </ReactFlow>
         </section>
         <aside className="app__sidebar" aria-label="Pannello laterale del workflow">
+          <SidebarSection
+            id="template-info"
+            title="Dettagli template"
+            description="Riferimenti rapidi al template attivo e alle sue note principali."
+          >
+            <div className="template-summary">
+              <span className="template-summary__icon" aria-hidden>
+                {activeTemplate.icon}
+              </span>
+              <div className="template-summary__content">
+                <strong>{workflowMetadata.name}</strong>
+                <span className="template-category-badge">
+                  {templateCategoryInfo.label}
+                </span>
+              </div>
+            </div>
+            {workflowMetadata.description ? (
+              <p className="muted-copy">{workflowMetadata.description}</p>
+            ) : null}
+            <dl className="meta-grid">
+              {workflowMetadata.author ? (
+                <div>
+                  <dt>Autore</dt>
+                  <dd>{workflowMetadata.author.name}</dd>
+                </div>
+              ) : null}
+              {workflowMetadata.tags && workflowMetadata.tags.length > 0 ? (
+                <div>
+                  <dt>Tag</dt>
+                  <dd>{workflowMetadata.tags.join(", ")}</dd>
+                </div>
+              ) : null}
+              {workflowMetadata.createdAt ? (
+                <div>
+                  <dt>Creato il</dt>
+                  <dd>{new Date(workflowMetadata.createdAt).toLocaleDateString()}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </SidebarSection>
           <SidebarSection
             id="workflow-runner"
             title="Esegui workflow"
@@ -410,14 +765,21 @@ function App(): JSX.Element {
               <pre className="code-block">{JSON.stringify(execution.outputs, null, 2)}</pre>
             ) : (
               <p className="muted-copy">
-                Nessun output disponibile. Avvia un'esecuzione per visualizzare i
-                risultati.
+                Nessun output disponibile. Avvia un'esecuzione per visualizzare i risultati.
               </p>
             )}
           </SidebarSection>
         </aside>
       </main>
     </div>
+  );
+}
+
+function App(): JSX.Element {
+  return (
+    <ReactFlowProvider>
+      <WorkflowApp />
+    </ReactFlowProvider>
   );
 }
 
