@@ -1,4 +1,5 @@
 import { create, type StoreApi } from "zustand";
+import { subscribeWithSelector } from "zustand/middleware";
 import {
   addEdge,
   applyEdgeChanges,
@@ -169,7 +170,8 @@ const createInitialValidationState = (): WorkflowValidationState => ({
   lastUpdatedAt: Date.now(),
 });
 
-export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
+export const useWorkflowStore = create<WorkflowStore>()(
+  subscribeWithSelector((set, get) => ({
   nodes: [],
   edges: [],
   selectedNodeId: undefined,
@@ -226,7 +228,7 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       edges: addEdge(
         {
           ...connection,
-          type: "smoothstep",
+          type: "workflow",
           animated: true,
         },
         state.edges,
@@ -429,7 +431,39 @@ export const useWorkflowStore = create<WorkflowStore>((set, get) => ({
       },
     });
   },
-}));
+})),
+);
+
+export const workflowSelectors = {
+  nodes: (state: WorkflowStore) => state.nodes,
+  edges: (state: WorkflowStore) => state.edges,
+  onNodesChange: (state: WorkflowStore) => state.onNodesChange,
+  onEdgesChange: (state: WorkflowStore) => state.onEdgesChange,
+  onConnect: (state: WorkflowStore) => state.onConnect,
+  setNodes: (state: WorkflowStore) => state.setNodes,
+  selectedNodeId: (state: WorkflowStore) => state.selectedNodeId,
+  selectNode: (state: WorkflowStore) => state.selectNode,
+  executionRunId: (state: WorkflowStore) => state.execution.runId,
+  executionStatus: (state: WorkflowStore) => state.execution.status,
+  executionLoading: (state: WorkflowStore) => state.execution.loading,
+  executionError: (state: WorkflowStore) => state.execution.error,
+  executionOutputs: (state: WorkflowStore) => state.execution.outputs,
+  executionSteps: (state: WorkflowStore) => state.execution.steps,
+  startExecution: (state: WorkflowStore) => state.startExecution,
+  completeExecution: (state: WorkflowStore) => state.completeExecution,
+  failExecution: (state: WorkflowStore) => state.failExecution,
+  resetExecution: (state: WorkflowStore) => state.resetExecution,
+  history: (state: WorkflowStore) => state.history,
+  addHistoryRun: (state: WorkflowStore) => state.addHistoryRun,
+  updateHistoryRun: (state: WorkflowStore) => state.updateHistoryRun,
+  archiveHistoryRun: (state: WorkflowStore) => state.archiveHistoryRun,
+  updateExecutionFromRun: (state: WorkflowStore) => state.updateExecutionFromRun,
+  validation: (state: WorkflowStore) => state.validation,
+  setValidationMetadata: (state: WorkflowStore) => state.setValidationMetadata,
+  updateNodeLabel: (state: WorkflowStore) => state.updateNodeLabel,
+  updateNodeKind: (state: WorkflowStore) => state.updateNodeKind,
+  updateNodeParameters: (state: WorkflowStore) => state.updateNodeParameters,
+} as const;
 
 function mapValidationReport(
   report: WorkflowValidationReport,

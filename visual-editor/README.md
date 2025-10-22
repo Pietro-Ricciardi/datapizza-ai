@@ -122,7 +122,7 @@ La suite Python copre il loader dinamico e l'esecutore, verificando l'import dei
 
 ## Gestione dello stato con Zustand
 
-Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizzato nello store definito in `src/store/workflow-store.ts`. Lo store espone azioni dedicate per l'inizializzazione del canvas, l'applicazione dei cambiamenti provenienti da React Flow e la creazione automatica di connessioni `smoothstep` animate. Questo approccio evita la duplicazione della logica di aggiornamento e rende più semplice estendere il workflow editor con pannelli di configurazione o controlli esterni al canvas.
+Lo stato dell'editor (nodi, connessioni e relative trasformazioni) è centralizzato nello store definito in `src/store/workflow-store.ts`. Lo store espone azioni dedicate per l'inizializzazione del canvas, l'applicazione dei cambiamenti provenienti da React Flow e la creazione automatica di connessioni `workflow` animate basate su un edge personalizzato `SmoothStep`. Questo approccio evita la duplicazione della logica di aggiornamento e rende più semplice estendere il workflow editor con pannelli di configurazione o controlli esterni al canvas.
 
 ### Pannello "Dettagli nodo"
 
@@ -152,6 +152,13 @@ Per garantire la compatibilità con il loader Python viene introdotto `src/workf
 - Ogni esecuzione espone i log in tempo quasi reale grazie al polling del nuovo endpoint FastAPI (`GET /workflow/runs/{run_id}/logs`); la UI utilizza una lista virtualizzata (`LogViewer`) per gestire agevolmente anche flussi lunghi.
 - La store Zustand mantiene uno storico (`history`) con definizione, opzioni runtime, risultato e stato di archiviazione di ogni run, rendendo possibile la funzionalità di retry e la sincronizzazione con la cronologia del backend.
 - Il client `src/services/workflow-api.ts` supporta ora sia l'esecuzione sincrona classica (`POST /workflow/execute`) sia quella asincrona/streaming (`POST /workflow/runs` con polling di stato/log) ed espone helper per elencare, archiviare e riavviare run (`GET /workflow/runs`, `POST /workflow/runs/{run_id}/archive`, `POST /workflow/runs/{run_id}/retry`).
+
+## Ottimizzazioni delle performance del canvas
+
+- React Flow utilizza componenti personalizzati (`ValidationNode`, `WorkflowEdge`) registrati tramite `nodeTypes`/`edgeTypes` e opzioni di default memoizzate per ridurre i re-render del canvas e centralizzare l'animazione delle connessioni.
+- Lo store Zustand adotta il middleware `subscribeWithSelector` ed espone selettori condivisi (`workflowSelectors`) per evitare sottoscrizioni duplicate e mantenere stabile lo stato reattivo del canvas e dei pannelli laterali.
+- Il pannello "Stato dei nodi" impiega ora un componente virtualizzato (`NodeStatusList`) basato su `react-window` per gestire workflow di grandi dimensioni senza degradare le prestazioni.
+- I pannelli laterali più pesanti (cronologia, log viewer, inspector) sono caricati on demand tramite `React.lazy`/`Suspense` e il bundler Vite segmenta il build in chunk dedicati (`reactflow`, `virtualized-lists`, `workflow-panels`) per velocizzare il first load.
 
 ## Formato di esportazione/importazione dei workflow
 

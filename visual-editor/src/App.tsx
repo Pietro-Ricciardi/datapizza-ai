@@ -1,4 +1,6 @@
 import {
+  Suspense,
+  lazy,
   useCallback,
   useEffect,
   useMemo,
@@ -43,19 +45,19 @@ import {
   type WorkflowRunLogResponse,
   type WorkflowRunStatusResponse,
 } from "./services/workflow-api";
-import { NodeInspector } from "./components/NodeInspector";
 import {
   useWorkflowStore,
+  workflowSelectors,
   type WorkflowRunHistoryItem,
 } from "./store/workflow-store";
-import { ExecutionHistoryTimeline, type TimelineFilter } from "./components/ExecutionHistoryTimeline";
-import { LogViewer } from "./components/LogViewer";
 import {
   InputValidationNode,
   OutputValidationNode,
   TaskValidationNode,
   type ValidationNodeData,
 } from "./components/ValidationNode";
+import { NodeStatusList, type NodeStatusItem } from "./components/NodeStatusList";
+import { WorkflowEdge } from "./components/WorkflowEdge";
 import {
   NODE_TEMPLATES,
   WORKFLOW_TEMPLATES,
@@ -65,6 +67,13 @@ import {
   type WorkflowTemplate,
 } from "./data/workflow-templates";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import type { TimelineFilter } from "./components/ExecutionHistoryTimeline";
+
+const NodeInspector = lazy(() => import("./components/NodeInspector"));
+const ExecutionHistoryTimeline = lazy(
+  () => import("./components/ExecutionHistoryTimeline"),
+);
+const LogViewer = lazy(() => import("./components/LogViewer"));
 
 const NODE_TEMPLATE_MIME = "application/datapizza-workflow-node-template";
 
@@ -466,26 +475,49 @@ function ImportWorkflowDialog({
 function WorkflowApp(): JSX.Element {
   const { project, fitView, setViewport, getViewport } = useReactFlow();
 
-  const nodes = useWorkflowStore((state) => state.nodes);
-  const edges = useWorkflowStore((state) => state.edges);
-  const onNodesChange = useWorkflowStore((state) => state.onNodesChange);
-  const onEdgesChange = useWorkflowStore((state) => state.onEdgesChange);
-  const onConnect = useWorkflowStore((state) => state.onConnect);
-  const setNodes = useWorkflowStore((state) => state.setNodes);
-  const selectedNodeId = useWorkflowStore((state) => state.selectedNodeId);
-  const selectNode = useWorkflowStore((state) => state.selectNode);
-  const execution = useWorkflowStore((state) => state.execution);
-  const startExecution = useWorkflowStore((state) => state.startExecution);
-  const completeExecution = useWorkflowStore((state) => state.completeExecution);
-  const failExecution = useWorkflowStore((state) => state.failExecution);
-  const resetExecution = useWorkflowStore((state) => state.resetExecution);
-  const history = useWorkflowStore((state) => state.history);
-  const addHistoryRun = useWorkflowStore((state) => state.addHistoryRun);
-  const updateHistoryRun = useWorkflowStore((state) => state.updateHistoryRun);
-  const archiveHistoryEntry = useWorkflowStore((state) => state.archiveHistoryRun);
-  const updateExecutionFromRun = useWorkflowStore((state) => state.updateExecutionFromRun);
-  const validation = useWorkflowStore((state) => state.validation);
-  const setValidationMetadataStore = useWorkflowStore((state) => state.setValidationMetadata);
+  const nodes = useWorkflowStore(workflowSelectors.nodes);
+  const edges = useWorkflowStore(workflowSelectors.edges);
+  const onNodesChange = useWorkflowStore(workflowSelectors.onNodesChange);
+  const onEdgesChange = useWorkflowStore(workflowSelectors.onEdgesChange);
+  const onConnect = useWorkflowStore(workflowSelectors.onConnect);
+  const setNodes = useWorkflowStore(workflowSelectors.setNodes);
+  const selectedNodeId = useWorkflowStore(workflowSelectors.selectedNodeId);
+  const selectNode = useWorkflowStore(workflowSelectors.selectNode);
+  const executionRunId = useWorkflowStore(workflowSelectors.executionRunId);
+  const executionStatus = useWorkflowStore(workflowSelectors.executionStatus);
+  const executionLoading = useWorkflowStore(workflowSelectors.executionLoading);
+  const executionError = useWorkflowStore(workflowSelectors.executionError);
+  const executionOutputs = useWorkflowStore(workflowSelectors.executionOutputs);
+  const executionSteps = useWorkflowStore(workflowSelectors.executionSteps);
+  const execution = useMemo(
+    () => ({
+      runId: executionRunId,
+      status: executionStatus,
+      loading: executionLoading,
+      error: executionError,
+      outputs: executionOutputs,
+      steps: executionSteps,
+    }),
+    [
+      executionError,
+      executionLoading,
+      executionOutputs,
+      executionRunId,
+      executionStatus,
+      executionSteps,
+    ],
+  );
+  const startExecution = useWorkflowStore(workflowSelectors.startExecution);
+  const completeExecution = useWorkflowStore(workflowSelectors.completeExecution);
+  const failExecution = useWorkflowStore(workflowSelectors.failExecution);
+  const resetExecution = useWorkflowStore(workflowSelectors.resetExecution);
+  const history = useWorkflowStore(workflowSelectors.history);
+  const addHistoryRun = useWorkflowStore(workflowSelectors.addHistoryRun);
+  const updateHistoryRun = useWorkflowStore(workflowSelectors.updateHistoryRun);
+  const archiveHistoryEntry = useWorkflowStore(workflowSelectors.archiveHistoryRun);
+  const updateExecutionFromRun = useWorkflowStore(workflowSelectors.updateExecutionFromRun);
+  const validation = useWorkflowStore(workflowSelectors.validation);
+  const setValidationMetadataStore = useWorkflowStore(workflowSelectors.setValidationMetadata);
 
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
@@ -615,6 +647,28 @@ function WorkflowApp(): JSX.Element {
       input: InputValidationNode,
       default: TaskValidationNode,
       output: OutputValidationNode,
+    }),
+    [],
+  );
+
+  const edgeTypes = useMemo(
+    () => ({
+      workflow: WorkflowEdge,
+    }),
+    [],
+  );
+
+  const defaultEdgeOptions = useMemo(
+    () => ({
+      type: "workflow" as const,
+      animated: true,
+    }),
+    [],
+  );
+
+  const proOptions = useMemo(
+    () => ({
+      hideAttribution: true,
     }),
     [],
   );
@@ -979,6 +1033,18 @@ function WorkflowApp(): JSX.Element {
     [],
   );
 
+  const handleSelectionChange = useCallback(
+    ({ nodes: nextNodes }: { nodes: Node[] }) => {
+      const nextSelected = nextNodes[0];
+      selectNode(nextSelected ? nextSelected.id : undefined);
+    },
+    [selectNode],
+  );
+
+  const handlePaneClick = useCallback(() => {
+    selectNode(undefined);
+  }, [selectNode]);
+
   const workflowStatusLabel = useMemo(() => {
     if (execution.loading) {
       return "In esecuzione";
@@ -1070,7 +1136,7 @@ function WorkflowApp(): JSX.Element {
     ],
   );
 
-  const nodeStatuses = useMemo(() => {
+  const nodeStatuses = useMemo<NodeStatusItem[]>(() => {
     return nodes.map((node) => {
       const step = execution.steps[node.id];
       const status = step?.status ?? (execution.loading ? "pending" : "idle");
@@ -1083,9 +1149,9 @@ function WorkflowApp(): JSX.Element {
         labelText: label,
         details: step?.details,
         validationSummary,
-      };
+      } satisfies NodeStatusItem;
     });
-  }, [nodes, execution.steps, execution.loading, nodeValidationSummaries]);
+  }, [execution, nodeValidationSummaries, nodes]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId),
@@ -1305,15 +1371,14 @@ function WorkflowApp(): JSX.Element {
             nodes={nodesForCanvas}
             edges={edges}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            defaultEdgeOptions={defaultEdgeOptions}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
-            onSelectionChange={({ nodes: nextNodes }) => {
-              const nextSelected = nextNodes[0];
-              selectNode(nextSelected ? nextSelected.id : undefined);
-            }}
-            onPaneClick={() => selectNode(undefined)}
-            proOptions={{ hideAttribution: true }}
+            onSelectionChange={handleSelectionChange}
+            onPaneClick={handlePaneClick}
+            proOptions={proOptions}
             onDrop={onDropNodeTemplate}
             onDragOver={onDragOverNodeTemplate}
           >
@@ -1550,25 +1615,29 @@ function WorkflowApp(): JSX.Element {
         title="Cronologia esecuzioni"
         description="Consulta le esecuzioni precedenti, ripetile e scarica gli artefatti generati."
       >
-        <ExecutionHistoryTimeline
-          runs={history}
-          filter={timelineFilter}
-          onFilterChange={handleFilterChange}
-          selectedRunId={selectedRunId}
-          onSelectRun={handleSelectRun}
-          onRetry={handleRetry}
-          onDownload={handleDownloadArtifacts}
-          onArchive={handleArchiveRun}
-        />
-        <LogViewer
-          logs={selectedLogs}
-          loading={isLogLoading}
-          emptyMessage={
-            selectedRun
-              ? "Nessun log disponibile per questa esecuzione."
-              : "Seleziona una run per visualizzare i log in streaming."
-          }
-        />
+        <Suspense fallback={<p className="muted-copy">Caricamento cronologia…</p>}>
+          <ExecutionHistoryTimeline
+            runs={history}
+            filter={timelineFilter}
+            onFilterChange={handleFilterChange}
+            selectedRunId={selectedRunId}
+            onSelectRun={handleSelectRun}
+            onRetry={handleRetry}
+            onDownload={handleDownloadArtifacts}
+            onArchive={handleArchiveRun}
+          />
+        </Suspense>
+        <Suspense fallback={<p className="muted-copy">Caricamento log…</p>}>
+          <LogViewer
+            logs={selectedLogs}
+            loading={isLogLoading}
+            emptyMessage={
+              selectedRun
+                ? "Nessun log disponibile per questa esecuzione."
+                : "Seleziona una run per visualizzare i log in streaming."
+            }
+          />
+        </Suspense>
       </SidebarSection>
 
       <SidebarSection
@@ -1577,7 +1646,9 @@ function WorkflowApp(): JSX.Element {
         description="Seleziona un nodo dal canvas per modificarne label, tipo e parametri JSON."
           >
             {selectedNode ? (
-              <NodeInspector node={selectedNode} />
+              <Suspense fallback={<p className="muted-copy">Caricamento dettagli nodo…</p>}>
+                <NodeInspector node={selectedNode} />
+              </Suspense>
             ) : (
               <p className="muted-copy">
                 Nessun nodo selezionato. Clicca su un nodo nel canvas per visualizzare i dettagli.
@@ -1586,33 +1657,7 @@ function WorkflowApp(): JSX.Element {
           </SidebarSection>
 
           <SidebarSection title="Stato dei nodi">
-            <ul className="status-list">
-              {nodeStatuses.map((node) => (
-                <li
-                  key={node.id}
-                  className={`status-list__item status-list__item--${node.status}`}
-                >
-                  <div className="status-list__header">
-                    <span className="status-list__name">{node.label}</span>
-                    <span className={`status-badge status-badge--${node.status}`}>
-                      {node.labelText}
-                    </span>
-                  </div>
-                  {node.validationSummary ? (
-                    <div
-                      className={`status-list__validation status-list__validation--${node.validationSummary.severity}`}
-                      title={node.validationSummary.messages.join("\n")}
-                    >
-                      {node.validationSummary.severity === "error" ? "Problemi critici" : "Avvisi"}
-                      <span className="status-list__validation-count">{node.validationSummary.count}</span>
-                    </div>
-                  ) : null}
-                  {node.details ? (
-                    <p className="status-list__details">{node.details}</p>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <NodeStatusList items={nodeStatuses} />
           </SidebarSection>
 
           <SidebarSection title="Output esecuzione">

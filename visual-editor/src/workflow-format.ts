@@ -214,6 +214,7 @@ export function toReactFlowGraph(workflow: WorkflowDefinition): ToReactFlowResul
       target: edge.target.nodeId,
       sourceHandle: edge.source.portId,
       targetHandle: edge.target.portId,
+      type: "workflow",
       data: {
         ...metadata,
         ...(edge.label ? { label: edge.label } : {}),
