@@ -2,7 +2,9 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
+  type ChangeEvent,
   type DragEvent,
   type ReactNode,
 } from "react";
@@ -26,9 +28,15 @@ import { useWorkflowStore } from "./store/workflow-store";
 import {
   initializeWorkflowStoreFromDefinition,
   serializeWorkflowFromStore,
+  validateWorkflowLocally,
+  type WorkflowDefinitionWithArbitraryVersion,
 } from "./workflow-serialization";
 import { createResourceReference } from "./workflow-parameters";
-import { executeWorkflow, WorkflowApiError } from "./services/workflow-api";
+import {
+  executeWorkflow,
+  validateWorkflowDefinition,
+  WorkflowApiError,
+} from "./services/workflow-api";
 import { NodeInspector } from "./components/NodeInspector";
 import {
   NODE_TEMPLATES,
@@ -38,6 +46,7 @@ import {
   type NodeTemplate,
   type WorkflowTemplate,
 } from "./data/workflow-templates";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
 const NODE_TEMPLATE_MIME = "application/datapizza-workflow-node-template";
 
@@ -51,11 +60,16 @@ type SidebarSectionProps = {
 };
 
 type AppHeaderProps = {
-  onExport: () => void;
+  onToggleExportMenu: () => void;
+  onImport: () => void;
   onToggleTheme: () => void;
   onToggleLibrary: () => void;
   theme: ThemeMode;
   activeTemplate: WorkflowTemplate;
+  templateSource: "template" | "import";
+  workflowName: string;
+  workflowIcon?: string;
+  exportMenuOpen: boolean;
 };
 
 type LibraryDrawerProps = {
@@ -66,6 +80,24 @@ type LibraryDrawerProps = {
   onClose: () => void;
   onApplyTemplate: (templateId: string) => void;
   onNodeDragStart: (event: DragEvent<HTMLElement>, template: NodeTemplate) => void;
+};
+
+type ExportFormat = "json" | "yaml";
+
+interface ValidationState {
+  status: "idle" | "loading" | "success" | "error";
+  source?: "remote" | "local";
+  valid?: boolean;
+  issues: string[];
+  message?: string;
+}
+
+type ImportWorkflowDialogProps = {
+  open: boolean;
+  onClose: () => void;
+  onImportFile: (file: File) => Promise<void>;
+  importing: boolean;
+  error?: string;
 };
 
 const statusLabels: Record<string, string> = {
@@ -124,6 +156,14 @@ const createUniqueNodeId = (baseId: string, nodes: Node[]): string => {
   return candidate;
 };
 
+const slugify = (value: string): string =>
+  value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .toLowerCase();
+
 function SidebarSection({ title, description, children, id }: SidebarSectionProps) {
   return (
     <section className="sidebar-section" id={id}>
@@ -137,15 +177,25 @@ function SidebarSection({ title, description, children, id }: SidebarSectionProp
 }
 
 function AppHeader({
-  onExport,
+  onToggleExportMenu,
+  onImport,
   onToggleTheme,
   onToggleLibrary,
   theme,
   activeTemplate,
+  templateSource,
+  workflowName,
+  workflowIcon,
+  exportMenuOpen,
 }: AppHeaderProps) {
   const categoryInfo =
     WORKFLOW_TEMPLATE_CATEGORIES[activeTemplate.category] ??
     ({ label: activeTemplate.category, description: "" } as const);
+  const headerIcon =
+    templateSource === "import"
+      ? workflowIcon || "📥"
+      : activeTemplate.icon;
+  const badgeLabel = templateSource === "import" ? "Import manuale" : categoryInfo.label;
   return (
     <header className="app__header" role="banner">
       <div className="app__header-layout">
@@ -157,13 +207,26 @@ function AppHeader({
           </p>
           <p className="app__header-template" aria-live="polite">
             <span className="app__header-template-icon" aria-hidden>
-              {activeTemplate.icon}
+              {headerIcon}
             </span>
             <span>
-              Template attivo: <strong>{activeTemplate.name}</strong>
+              {templateSource === "import" ? (
+                <>
+                  Workflow importato: <strong>{workflowName}</strong>
+                </>
+              ) : (
+                <>
+                  Template attivo: <strong>{activeTemplate.name}</strong>
+                </>
+              )}
             </span>
-            <span className="template-category-badge">{categoryInfo.label}</span>
+            <span className="template-category-badge">{badgeLabel}</span>
           </p>
+          {templateSource === "template" ? (
+            <p className="muted-copy" aria-live="polite">
+              Workflow corrente: <strong>{workflowName}</strong>
+            </p>
+          ) : null}
         </div>
         <div className="app__header-actions">
           <button
@@ -173,10 +236,20 @@ function AppHeader({
           >
             Catalogo workflow
           </button>
+          <button className="button button--ghost" type="button" onClick={onImport}>
+            Importa workflow
+          </button>
           <button className="button button--ghost" type="button" onClick={onToggleTheme}>
             Modalità {theme === "light" ? "scura" : "chiara"}
           </button>
-          <button className="button button--primary" type="button" onClick={onExport}>
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={onToggleExportMenu}
+            aria-expanded={exportMenuOpen}
+            aria-haspopup="menu"
+            data-export-toggle="true"
+          >
             Esporta workflow
           </button>
         </div>
@@ -305,8 +378,69 @@ function LibraryDrawer({
   );
 }
 
+function ImportWorkflowDialog({
+  open,
+  onClose,
+  onImportFile,
+  importing,
+  error,
+}: ImportWorkflowDialogProps) {
+  const onFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) {
+        return;
+      }
+      await onImportFile(file);
+      event.target.value = "";
+    },
+    [onImportFile],
+  );
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+      <div className="modal__content">
+        <div className="modal__header">
+          <div>
+            <p className="modal__eyebrow">Importazione</p>
+            <h2 id="import-dialog-title">Carica un workflow esistente</h2>
+          </div>
+          <button className="button button--ghost" type="button" onClick={onClose}>
+            Chiudi
+          </button>
+        </div>
+        <p className="modal__description">
+          Seleziona un file <strong>.json</strong>, <strong>.yaml</strong> o <strong>.yml</strong>. Il contenuto verrà migrato alla
+          versione supportata e caricato nel canvas.
+        </p>
+        <label className="form-field" htmlFor="workflow-file">
+          <span className="form-field__label">Definizione workflow</span>
+          <input
+            id="workflow-file"
+            type="file"
+            className="form-field__input"
+            accept="application/json,application/x-yaml,.json,.yaml,.yml"
+            onChange={onFileChange}
+            disabled={importing}
+          />
+        </label>
+        {importing ? <p className="muted-copy">Analisi del file in corso...</p> : null}
+        {error ? <p className="inline-feedback inline-feedback--error">{error}</p> : null}
+        <p className="muted-copy">
+          Suggerimento: esporta dal backend Datapizza o riutilizza un file creato con questo editor per mantenere compatibili i
+          componenti.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function WorkflowApp(): JSX.Element {
-  const { project, fitView, setViewport } = useReactFlow();
+  const { project, fitView, setViewport, getViewport } = useReactFlow();
 
   const nodes = useWorkflowStore((state) => state.nodes);
   const edges = useWorkflowStore((state) => state.edges);
@@ -355,6 +489,13 @@ function WorkflowApp(): JSX.Element {
     initialTemplate.runtimeDefaults?.environment ?? "",
   );
   const [datasetUri, setDatasetUri] = useState(initialTemplate.runtimeDefaults?.datasetUri ?? "");
+  const [templateSource, setTemplateSource] = useState<"template" | "import">("template");
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importError, setImportError] = useState<string | undefined>(undefined);
+  const [validationState, setValidationState] = useState<ValidationState>({ status: "idle", issues: [] });
 
   useEffect(() => {
     if (typeof document !== "undefined") {
@@ -388,12 +529,17 @@ function WorkflowApp(): JSX.Element {
 
   const loadTemplate = useCallback(
     (template: WorkflowTemplate) => {
+      setTemplateSource("template");
       setWorkflowMetadata(template.definition.metadata);
       setRuntimeEnvironment(template.runtimeDefaults?.environment ?? "");
       setDatasetUri(template.runtimeDefaults?.datasetUri ?? "");
       resetExecution();
+      setValidationState({ status: "idle", issues: [] });
+      setImportError(undefined);
+      setIsExportMenuOpen(false);
+      setIsImportDialogOpen(false);
 
-      const reactFlowState = initializeWorkflowStoreFromDefinition(template.definition);
+      const { reactFlow: reactFlowState } = initializeWorkflowStoreFromDefinition(template.definition);
 
       if (typeof window !== "undefined") {
         window.requestAnimationFrame(() => {
@@ -405,12 +551,242 @@ function WorkflowApp(): JSX.Element {
         });
       }
     },
-    [fitView, resetExecution, setDatasetUri, setRuntimeEnvironment, setViewport, setWorkflowMetadata],
+    [
+      fitView,
+      resetExecution,
+      setDatasetUri,
+      setRuntimeEnvironment,
+      setViewport,
+      setWorkflowMetadata,
+      setTemplateSource,
+      setValidationState,
+      setImportError,
+      setIsExportMenuOpen,
+      setIsImportDialogOpen,
+    ],
   );
 
   useEffect(() => {
     loadTemplate(activeTemplate);
   }, [activeTemplate, loadTemplate]);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) {
+        return;
+      }
+      if (
+        exportMenuRef.current &&
+        !exportMenuRef.current.contains(target) &&
+        !target.closest('[data-export-toggle="true"]')
+      ) {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsExportMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [isExportMenuOpen]);
+
+  const createWorkflowSnapshot = useCallback(() => {
+    return serializeWorkflowFromStore({
+      metadata: {
+        ...workflowMetadata,
+        updatedAt: new Date().toISOString(),
+      },
+      version: WORKFLOW_FORMAT_VERSION,
+      reactFlow: { viewport: getViewport() },
+    });
+  }, [getViewport, workflowMetadata]);
+
+  const downloadWorkflow = useCallback(
+    (format: ExportFormat) => {
+      if (typeof document === "undefined") {
+        return;
+      }
+
+      const snapshot = createWorkflowSnapshot();
+      const content =
+        format === "json" ? JSON.stringify(snapshot, null, 2) : stringifyYaml(snapshot);
+      const blob = new Blob([content], {
+        type: format === "json" ? "application/json" : "application/x-yaml",
+      });
+      const baseName = slugify(workflowMetadata.name || "workflow");
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const fileName = `${baseName || "workflow"}-${timestamp}.${format}`;
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+      }, 0);
+      setIsExportMenuOpen(false);
+    },
+    [createWorkflowSnapshot, workflowMetadata.name],
+  );
+
+  const handleImportFile = useCallback(
+    async (file: File) => {
+      setIsImporting(true);
+      setImportError(undefined);
+
+      try {
+        const fileContents = await file.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(fileContents) as unknown;
+        } catch (jsonError) {
+          try {
+            parsed = parseYaml(fileContents);
+          } catch (yamlError) {
+            throw new Error(
+              "Impossibile analizzare il file. Assicurati che sia un JSON o YAML valido.",
+            );
+          }
+        }
+
+        if (!parsed || typeof parsed !== "object") {
+          throw new Error("Il file non contiene una definizione di workflow valida.");
+        }
+
+        const candidate = parsed as Record<string, unknown>;
+        const version = typeof candidate.version === "string" ? candidate.version : WORKFLOW_FORMAT_VERSION;
+        const definition = {
+          ...candidate,
+          version,
+        } as WorkflowDefinitionWithArbitraryVersion;
+
+        const { workflow: migratedWorkflow, reactFlow } = initializeWorkflowStoreFromDefinition(definition);
+        setWorkflowMetadata(migratedWorkflow.metadata);
+
+        const backendExtensions = migratedWorkflow.extensions?.backend;
+        if (backendExtensions && typeof backendExtensions === "object") {
+          const backendData = backendExtensions as Record<string, unknown>;
+          const envValue = backendData.environment;
+          setRuntimeEnvironment(typeof envValue === "string" ? envValue : "");
+          const datasetValue = backendData.datasetUri ?? backendData.datasetURI;
+          setDatasetUri(typeof datasetValue === "string" ? datasetValue : "");
+        } else {
+          setRuntimeEnvironment("");
+          setDatasetUri("");
+        }
+
+        resetExecution();
+        setTemplateSource("import");
+        setValidationState({ status: "idle", issues: [] });
+        setIsExportMenuOpen(false);
+
+        if (typeof window !== "undefined") {
+          window.requestAnimationFrame(() => {
+            if (reactFlow?.viewport) {
+              setViewport(reactFlow.viewport);
+            } else {
+              fitView({ padding: 0.2 });
+            }
+          });
+        }
+
+        setIsImportDialogOpen(false);
+      } catch (error) {
+        console.error("Impossibile importare il workflow", error);
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Impossibile importare il workflow: formato non riconosciuto";
+        setImportError(message);
+      } finally {
+        setIsImporting(false);
+      }
+    },
+    [
+      fitView,
+      resetExecution,
+      setDatasetUri,
+      setRuntimeEnvironment,
+      setTemplateSource,
+      setValidationState,
+      setViewport,
+      setWorkflowMetadata,
+      setIsExportMenuOpen,
+      setIsImportDialogOpen,
+    ],
+  );
+
+  const toggleExportMenu = useCallback(() => {
+    setIsExportMenuOpen((open) => !open);
+  }, []);
+
+  const openImportDialog = useCallback(() => {
+    setImportError(undefined);
+    setIsImportDialogOpen(true);
+    setIsExportMenuOpen(false);
+  }, [setImportError, setIsExportMenuOpen]);
+
+  const closeImportDialog = useCallback(() => {
+    if (!isImporting) {
+      setIsImportDialogOpen(false);
+    }
+  }, [isImporting]);
+
+  const validateWorkflow = useCallback(async () => {
+    const snapshot = createWorkflowSnapshot();
+    setValidationState({ status: "loading", issues: [] });
+
+    try {
+      const response = await validateWorkflowDefinition(snapshot);
+      setValidationState({
+        status: response.valid ? "success" : "error",
+        valid: response.valid,
+        issues: response.issues,
+        source: "remote",
+        message: response.valid
+          ? "Validazione completata dal backend FastAPI."
+          : "Il backend ha rilevato delle incongruenze nella definizione.",
+      });
+    } catch (error) {
+      if (error instanceof WorkflowApiError) {
+        setValidationState({
+          status: "error",
+          valid: false,
+          issues: error.payload?.issues ?? [],
+          source: "remote",
+          message: error.message,
+        });
+        return;
+      }
+
+      const fallback = validateWorkflowLocally(snapshot);
+      setValidationState({
+        status: fallback.valid ? "success" : "error",
+        valid: fallback.valid,
+        issues: fallback.issues,
+        source: "local",
+        message: fallback.valid
+          ? "Validazione locale completata (fallback)."
+          : "Problemi rilevati dalla validazione locale (fallback).",
+      });
+    }
+  }, [createWorkflowSnapshot]);
 
   const onDropNodeTemplate = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -492,29 +868,11 @@ function WorkflowApp(): JSX.Element {
     [nodes, selectedNodeId],
   );
 
-  const exportWorkflow = useCallback(() => {
-    const snapshot = serializeWorkflowFromStore({
-      metadata: {
-        ...workflowMetadata,
-        updatedAt: new Date().toISOString(),
-      },
-      version: WORKFLOW_FORMAT_VERSION,
-    });
-
-    console.info("Workflow serializzato", snapshot);
-  }, [workflowMetadata]);
-
   const runWorkflow = useCallback(async () => {
     startExecution();
 
     try {
-      const snapshot = serializeWorkflowFromStore({
-        metadata: {
-          ...workflowMetadata,
-          updatedAt: new Date().toISOString(),
-        },
-        version: WORKFLOW_FORMAT_VERSION,
-      });
+      const snapshot = createWorkflowSnapshot();
 
       const trimmedEnvironment = runtimeEnvironment.trim();
       const overrides: Record<string, unknown> = {};
@@ -547,8 +905,8 @@ function WorkflowApp(): JSX.Element {
     }
   }, [
     datasetUri,
+    createWorkflowSnapshot,
     runtimeEnvironment,
-    workflowMetadata,
     startExecution,
     completeExecution,
     failExecution,
@@ -560,6 +918,7 @@ function WorkflowApp(): JSX.Element {
 
   const toggleLibrary = useCallback(() => {
     setIsLibraryOpen((open) => !open);
+    setIsExportMenuOpen(false);
   }, []);
 
   const applyTemplate = useCallback(
@@ -584,22 +943,63 @@ function WorkflowApp(): JSX.Element {
         <div
           className="library-drawer__backdrop"
           role="presentation"
-          onClick={() => setIsLibraryOpen(false)}
+          onClick={() => {
+            setIsLibraryOpen(false);
+            setIsExportMenuOpen(false);
+          }}
         />
       ) : null}
       <AppHeader
-        onExport={exportWorkflow}
+        onToggleExportMenu={toggleExportMenu}
+        onImport={openImportDialog}
         onToggleTheme={toggleTheme}
         onToggleLibrary={toggleLibrary}
         theme={theme}
         activeTemplate={activeTemplate}
+        templateSource={templateSource}
+        workflowName={workflowMetadata.name}
+        workflowIcon={workflowMetadata.icon}
+        exportMenuOpen={isExportMenuOpen}
+      />
+      {isExportMenuOpen ? (
+        <div
+          ref={exportMenuRef}
+          className="export-menu"
+          role="menu"
+          aria-label="Formati di esportazione del workflow"
+        >
+          <button
+            type="button"
+            className="export-menu__item"
+            onClick={() => downloadWorkflow("json")}
+          >
+            Scarica JSON
+          </button>
+          <button
+            type="button"
+            className="export-menu__item"
+            onClick={() => downloadWorkflow("yaml")}
+          >
+            Scarica YAML
+          </button>
+        </div>
+      ) : null}
+      <ImportWorkflowDialog
+        open={isImportDialogOpen}
+        onClose={closeImportDialog}
+        onImportFile={handleImportFile}
+        importing={isImporting}
+        error={importError}
       />
       <LibraryDrawer
         open={isLibraryOpen}
         templates={WORKFLOW_TEMPLATES}
         activeTemplateId={activeTemplateId}
         nodeGroups={nodeTemplateGroups}
-        onClose={() => setIsLibraryOpen(false)}
+        onClose={() => {
+          setIsLibraryOpen(false);
+          setIsExportMenuOpen(false);
+        }}
         onApplyTemplate={applyTemplate}
         onNodeDragStart={onNodeTemplateDragStart}
       />
@@ -636,15 +1036,24 @@ function WorkflowApp(): JSX.Element {
           >
             <div className="template-summary">
               <span className="template-summary__icon" aria-hidden>
-                {activeTemplate.icon}
+                {templateSource === "import"
+                  ? workflowMetadata.icon ?? "📥"
+                  : activeTemplate.icon}
               </span>
               <div className="template-summary__content">
                 <strong>{workflowMetadata.name}</strong>
                 <span className="template-category-badge">
-                  {templateCategoryInfo.label}
+                  {templateSource === "import" ? "Import manuale" : templateCategoryInfo.label}
                 </span>
               </div>
             </div>
+            {templateSource === "import" ? (
+              <p className="muted-copy">
+                Definizione caricata da file. Il workflow è stato migrato automaticamente alla versione
+                {" "}
+                <strong>{WORKFLOW_FORMAT_VERSION}</strong>.
+              </p>
+            ) : null}
             {workflowMetadata.description ? (
               <p className="muted-copy">{workflowMetadata.description}</p>
             ) : null}
@@ -668,6 +1077,56 @@ function WorkflowApp(): JSX.Element {
                 </div>
               ) : null}
             </dl>
+          </SidebarSection>
+          <SidebarSection
+            id="workflow-validation"
+            title="Validazione workflow"
+            description="Verifica la definizione corrente con il backend FastAPI o con un fallback locale."
+          >
+            <div className="validation-actions">
+              <button
+                className="button button--ghost"
+                type="button"
+                onClick={validateWorkflow}
+                disabled={validationState.status === "loading"}
+              >
+                {validationState.status === "loading" ? "Validazione in corso..." : "Valida definizione"}
+              </button>
+            </div>
+            {validationState.status === "idle" ? (
+              <p className="muted-copy">
+                Avvia la validazione per ottenere un riepilogo degli eventuali problemi strutturali e semantici del workflow.
+              </p>
+            ) : validationState.status === "loading" ? (
+              <p className="muted-copy">Analisi della definizione in corso...</p>
+            ) : (
+              <div className="validation-result">
+                <p
+                  className={`inline-feedback ${
+                    validationState.valid ? "inline-feedback--success" : "inline-feedback--error"
+                  }`}
+                >
+                  {validationState.message ??
+                    (validationState.valid
+                      ? "La definizione è stata validata correttamente."
+                      : "La definizione contiene alcune incongruenze.")}
+                  {validationState.source ? (
+                    <span className="validation-result__source">
+                      {validationState.source === "remote"
+                        ? " (risposta backend)"
+                        : " (validator locale)"}
+                    </span>
+                  ) : null}
+                </p>
+                {!validationState.valid && validationState.issues.length > 0 ? (
+                  <ul className="validation-issues">
+                    {validationState.issues.map((issue) => (
+                      <li key={issue}>{issue}</li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            )}
           </SidebarSection>
           <SidebarSection
             id="workflow-runner"
