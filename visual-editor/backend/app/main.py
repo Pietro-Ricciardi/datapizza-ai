@@ -1,20 +1,24 @@
 """FastAPI application exposing workflow utilities for the visual editor."""
 from __future__ import annotations
 
-from typing import Any, Dict
+from functools import lru_cache
+from typing import Any, Dict, Tuple
 
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import ValidationError
 
-from .executor import MockWorkflowExecutor
+from .executor import DatapizzaWorkflowExecutor
 from .models import (
     WORKFLOW_FORMAT_VERSION,
     WorkflowDefinition,
     WorkflowExecutionResult,
+    WorkflowExecutionRequest,
+    WorkflowRuntimeOptions,
     WorkflowSchemaResponse,
     WorkflowValidationResponse,
 )
+from .settings import AppSettings, get_settings, runtime_configuration
 
 app = FastAPI(
     title="Datapizza Visual Editor Backend",
@@ -33,7 +37,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-_executor = MockWorkflowExecutor()
+
+@lru_cache(maxsize=1)
+def _build_executor(node_timeout: float, max_workers: int) -> DatapizzaWorkflowExecutor:
+    """Return a cached executor instance configured with the given parameters."""
+
+    return DatapizzaWorkflowExecutor(node_timeout=node_timeout, max_workers=max_workers)
+
+
+@app.on_event("startup")
+def _configure_runtime_environment() -> None:
+    """Apply base runtime configuration as soon as the application starts."""
+
+    get_settings().configure_base_environment()
 
 
 @app.get("/", tags=["system"])
@@ -53,6 +69,28 @@ def _parse_workflow(payload: Dict[str, Any]) -> WorkflowDefinition:
             f"{'.'.join(map(str, error['loc']))}: {error['msg']}" for error in exc.errors()
         ]
         raise HTTPException(status_code=422, detail={"valid": False, "issues": issues})
+
+
+def _parse_execution_request(
+    payload: Dict[str, Any]
+) -> Tuple[WorkflowDefinition, WorkflowRuntimeOptions | None]:
+    """Support both legacy payloads and the new request contract with runtime options."""
+
+    if "workflow" in payload or "options" in payload:
+        try:
+            request = WorkflowExecutionRequest.parse_obj(payload)
+        except ValidationError as exc:
+            issues = [
+                f"{'.'.join(map(str, error['loc']))}: {error['msg']}" for error in exc.errors()
+            ]
+            raise HTTPException(status_code=422, detail={"valid": False, "issues": issues})
+        return request.workflow, request.options
+
+    return _parse_workflow(payload), None
+
+
+def _resolve_executor(settings: AppSettings) -> DatapizzaWorkflowExecutor:
+    return _build_executor(settings.executor_node_timeout, settings.executor_max_workers)
 
 
 @app.post(
@@ -101,8 +139,21 @@ def validate_workflow(payload: Dict[str, Any] = Body(...)) -> WorkflowValidation
     summary="Execute a workflow using the mock executor",
 )
 def execute_workflow(payload: Dict[str, Any] = Body(...)) -> WorkflowExecutionResult:
-    workflow = _parse_workflow(payload)
-    return _executor.run(workflow)
+    settings = get_settings()
+    workflow, options = _parse_execution_request(payload)
+    executor = _resolve_executor(settings)
+
+    with runtime_configuration(settings, options):
+        result = executor.run(workflow)
+
+    if options:
+        runtime_metadata = result.outputs.setdefault("runtime", {})
+        if options.environment:
+            runtime_metadata["environment"] = options.environment
+        if options.configOverrides:
+            runtime_metadata["configOverrides"] = dict(options.configOverrides)
+
+    return result
 
 
 @app.get(

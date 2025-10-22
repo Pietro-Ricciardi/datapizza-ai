@@ -247,6 +247,44 @@ class WorkflowExecutionStep(BaseModel):
     details: Optional[str] = None
 
 
+class WorkflowRuntimeOptions(BaseModel):
+    """Runtime options that influence how the backend executes workflows."""
+
+    environment: Optional[str] = Field(
+        default=None,
+        description="Named runtime profile to use for credentials and environment variables.",
+    )
+    componentSearchPaths: List[str] = Field(
+        default_factory=list,
+        description="Additional module search paths appended for this execution.",
+    )
+    environmentVariables: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Extra environment variables injected before invoking components.",
+    )
+    credentials: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Credential values exposed to Datapizza modules as environment variables.",
+    )
+    configOverrides: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arbitrary configuration payload surfaced to downstream components.",
+    )
+
+    @validator("componentSearchPaths", each_item=True)
+    def validate_component_path(cls, value: str) -> str:
+        if not value:
+            raise ValueError("component search paths cannot contain empty values")
+        return value
+
+
+class WorkflowExecutionRequest(BaseModel):
+    """Envelope used when invoking the execution endpoint with runtime options."""
+
+    workflow: WorkflowDefinition
+    options: Optional[WorkflowRuntimeOptions] = Field(default=None)
+
+
 class WorkflowExecutionResult(BaseModel):
     runId: str
     status: Literal["success", "failure"]

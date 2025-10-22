@@ -1,6 +1,25 @@
 # Backend FastAPI del visual editor
 
-Il backend in `visual-editor/backend/app` espone gli endpoint di import, validazione ed esecuzione mock descritti in `main.py`. I payload sono validati con i modelli Pydantic definiti in `models.py`, garantendo le stesse regole applicate dal frontend TypeScript (`visual-editor/src/workflow-format.ts`).【F:visual-editor/backend/app/main.py†L9-L91】【F:visual-editor/backend/app/models.py†L30-L258】【F:visual-editor/src/workflow-format.ts†L18-L148】 
+Il backend in `visual-editor/backend/app` espone gli endpoint di import, validazione ed esecuzione descritti in `main.py`, inclusa l'invocazione del nuovo `DatapizzaWorkflowExecutor`. I payload sono validati con i modelli Pydantic definiti in `models.py`, garantendo le stesse regole applicate dal frontend TypeScript (`visual-editor/src/workflow-format.ts`).【F:visual-editor/backend/app/main.py†L9-L161】【F:visual-editor/backend/app/models.py†L30-L343】【F:visual-editor/src/workflow-format.ts†L18-L148】
+
+## Configurazione runtime
+
+`app/settings.py` introduce `AppSettings`, un sistema di configurazione basato su Pydantic `BaseSettings` che centralizza la risoluzione di percorsi, variabili d'ambiente e credenziali usate dai moduli Datapizza.【F:visual-editor/backend/app/settings.py†L1-L153】 Le variabili possono essere definite in un file `.env` oppure tramite ambiente e includono:
+
+- `DATAPIZZA_COMPONENT_PATHS`: percorsi aggiuntivi (separati da `:`) inseriti in `sys.path` all'avvio del server.
+- `DATAPIZZA_ENVIRONMENT_VARIABLES` e `DATAPIZZA_CREDENTIALS`: dizionari JSON con coppie chiave/valore impostate nell'ambiente di processo.
+- `DATAPIZZA_RUNTIME_ENVIRONMENTS`: dizionario JSON che mappa un nome di ambiente (`dev`, `staging`, ...) a profili con percorsi, variabili e credenziali specifiche.
+- `DATAPIZZA_EXECUTOR_NODE_TIMEOUT` e `DATAPIZZA_EXECUTOR_MAX_WORKERS`: parametri usati per inizializzare l'esecutore reale.
+
+L'applicazione invoca `configure_base_environment()` in fase di startup per applicare i percorsi e le variabili globali una sola volta.【F:visual-editor/backend/app/main.py†L43-L51】【F:visual-editor/backend/app/settings.py†L96-L102】
+
+### Opzioni runtime per `/workflow/execute`
+
+L'endpoint di esecuzione accetta ora sia il payload storico (solo il workflow) sia un oggetto strutturato `{ "workflow": ..., "options": ... }`. Il campo `options` segue il modello `WorkflowRuntimeOptions` e consente di specificare profili nominati (`environment`), percorsi addizionali, variabili/credenziali temporanee e override di configurazione che vengono serializzati in `DATAPIZZA_RUNTIME_CONFIG_OVERRIDES` per essere letti dai componenti Python.【F:visual-editor/backend/app/main.py†L113-L138】【F:visual-editor/backend/app/models.py†L267-L319】【F:visual-editor/backend/app/settings.py†L110-L153】 Il risultato di esecuzione include le informazioni runtime effettivamente utilizzate nel campo `outputs.runtime` per facilitare il debug lato frontend.【F:visual-editor/backend/app/main.py†L132-L138】
+
+## Dipendenze Python
+
+Il file `requirements.txt` contiene ora, oltre a FastAPI e Pydantic, i pacchetti Datapizza necessari per eseguire realmente i workflow orchestrati dal visual editor (core, parser, reranker, tool e vectorstore).【F:visual-editor/backend/requirements.txt†L1-L13】 Installarli con `pip install -r requirements.txt` garantisce la disponibilità dei componenti Python caricati dall'esecutore senza dover configurare manualmente i singoli moduli.
 
 ## Mapping nodi → componenti Python
 
