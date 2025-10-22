@@ -2,6 +2,16 @@
 
 Interfaccia web dedicata alla creazione visuale dei workflow Datapizza. Il progetto vive come applicazione standalone all'interno di questa cartella e può essere sviluppato in autonomia rispetto al resto del repository.
 
+## Nuovo layout responsive
+
+Il visual editor espone un layout a sezioni riutilizzabili: header compatto con azioni contestuali (export, cambio tema), canvas fluido che si adatta alle colonne disponibili e sidebar modulare basata su card componibili. Le colonne del main passano automaticamente da uno stack verticale su viewport ridotte a due colonne con larghezze variabili su breakpoint `>= 64rem`, `>= 80rem` e `>= 90rem`, così da garantire spazio extra alle anteprime del workflow e mantenere leggibile il pannello laterale. Le palette cromatiche, la tipografia e lo spacing sono governati da design token CSS e supportano sia la modalità chiara sia quella scura tramite toggle in header e media query.
+
+### Story: revisione quotidiana della pipeline
+
+1. L'owner del workflow apre l'editor in modalità chiara e utilizza il pulsante **Esporta workflow** nell'header compatto per condividere uno snapshot con il team.
+2. Durante la standup, l'utente passa alla modalità scura con il toggle dedicato e monitora lo stato dei nodi nel pannello "Stato dei nodi", che evidenzia i badge di stato coerenti con la palette aggiornata.
+3. Con i breakpoint desktop estesi il canvas occupa la colonna principale, mentre la sidebar modulare resta ancorata a destra e consente di lanciare una nuova esecuzione, consultare metadati e leggere l'output JSON formattato.
+
 ## Setup iniziale
 
 Il frontend è stato inizializzato con [Vite](https://vitejs.dev/) utilizzando il template **React + TypeScript**. La struttura generata fornisce un punto di partenza minimale con hot module replacement e tooling TypeScript già configurato. L'interfaccia include ora un canvas interattivo basato su [React Flow](https://reactflow.dev/) per la rappresentazione dei workflow e uno store condiviso costruito con [Zustand](https://zustand-demo.pmnd.rs/) per governare nodi e connessioni.
