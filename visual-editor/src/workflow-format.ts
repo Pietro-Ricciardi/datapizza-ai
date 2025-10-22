@@ -20,6 +20,16 @@ export interface WorkflowMetadata {
   name: string;
   description?: string;
   tags?: string[];
+  /**
+   * Categoria logica del workflow (es. "ml", "etl"). È utilizzata dal
+   * catalogo per raggruppare i template ma rimane serializzabile per i
+   * consumer backend.
+   */
+  category?: string;
+  /**
+   * Icona o emoji per rappresentare il workflow in cataloghi e anteprime.
+   */
+  icon?: string;
   author?: {
     name: string;
     email?: string;

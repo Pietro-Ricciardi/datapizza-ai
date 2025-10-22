@@ -12,6 +12,34 @@ Il visual editor espone un layout a sezioni riutilizzabili: header compatto con 
 2. Durante la standup, l'utente passa alla modalità scura con il toggle dedicato e monitora lo stato dei nodi nel pannello "Stato dei nodi", che evidenzia i badge di stato coerenti con la palette aggiornata.
 3. Con i breakpoint desktop estesi il canvas occupa la colonna principale, mentre la sidebar modulare resta ancorata a destra e consente di lanciare una nuova esecuzione, consultare metadati e leggere l'output JSON formattato.
 
+## Catalogo template e nodi preconfigurati
+
+Il pulsante **Catalogo workflow** presente nell'header apre un drawer laterale con due funzionalità principali:
+
+- **Workflow predefiniti**: raccolta di template ML, ETL e di orchestrazione che reimpostano il canvas con nodi, archi e metadati già pronti.
+- **Nodi preconfigurati**: libreria drag & drop di input, task e output riutilizzabili con payload `component`/`parameters` già popolati.
+
+### Avviare un workflow da template
+
+1. Apri il catalogo e scegli un template (es. "Pipeline ML supervisionata").
+2. Premi **Applica** per caricare il grafo nel canvas; l'opzione **Ricarica** ripristina il template corrente allo stato iniziale.
+3. Il pannello laterale "Dettagli template" riporta categoria, autore, tag e descrizione del workflow attivo.
+
+### Trascinare nodi preconfigurati
+
+1. Con il catalogo aperto trascina un elemento della sezione "Nodi preconfigurati" sul canvas di React Flow.
+2. Il nodo viene creato con label, tipologia (`input`, `task`, `output`) e configurazione `data` ereditati dal template.
+3. Ogni rilascio genera un identificativo univoco (`node-id`, `node-id-1`, `node-id-2`, …) per evitare collisioni con i nodi esistenti.
+
+### Aggiungere template personalizzati
+
+Per ampliare la libreria modifica `src/data/workflow-templates.ts`:
+
+1. Aggiungi un oggetto a `WORKFLOW_TEMPLATES` specificando `id`, `name`, `description`, `category`, `icon`, `definition` (nodi, archi, metadata) e opzionali `runtimeDefaults` (`environment`, `datasetUri`).
+2. Inserisci eventuali nodi riutilizzabili in `NODE_TEMPLATES` assegnando la stessa `category` del workflow di riferimento e definendo `component`/`parameters` nel campo `data`.
+3. Aggiorna `WORKFLOW_TEMPLATE_CATEGORIES` se vuoi introdurre nuove categorie o descrizioni.
+4. Il drawer raggruppa automaticamente i nuovi elementi e li rende disponibili al drag & drop senza ulteriori modifiche.
+
 ## Setup iniziale
 
 Il frontend è stato inizializzato con [Vite](https://vitejs.dev/) utilizzando il template **React + TypeScript**. La struttura generata fornisce un punto di partenza minimale con hot module replacement e tooling TypeScript già configurato. L'interfaccia include ora un canvas interattivo basato su [React Flow](https://reactflow.dev/) per la rappresentazione dei workflow e uno store condiviso costruito con [Zustand](https://zustand-demo.pmnd.rs/) per governare nodi e connessioni.
@@ -102,7 +130,7 @@ La sidebar ospita un inspector contestuale che si attiva selezionando un nodo ne
 
 ## Workflow graph con React Flow
 
-L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Per personalizzare il grafo iniziale aggiornare l'oggetto `initialWorkflow` definito in `src/App.tsx`. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto. `initializeWorkflowStoreFromDefinition` restituisce l'intero stato React Flow persistito nelle estensioni (viewport, pannelli, ecc.), mentre `serializeWorkflowFromStore` accetta un oggetto `reactFlow` opzionale per sovrascrivere o aggiungere nuove preferenze dell'interfaccia al momento dell'export.
+L'applicazione monta un esempio di workflow di machine learning composto da nodi input, intermedi e output. È possibile interagire con il canvas utilizzando gli strumenti forniti da React Flow (mini-map, controlli di zoom e pan, connessioni animate). Il grafo iniziale coincide con il template `ml-standard-pipeline` definito in `src/data/workflow-templates.ts`, ma può essere sostituito scegliendo un template differente dal catalogo o aggiungendo nuove definizioni allo stesso file. L'inizializzazione dello store e l'esportazione del payload serializzato sono incapsulate nelle utility di `src/workflow-serialization.ts` (`initializeWorkflowStoreFromDefinition` e `serializeWorkflowFromStore`), che sfruttano i convertitori di `src/workflow-format.ts` per garantire la piena compatibilità con React Flow e con il backend previsto. `initializeWorkflowStoreFromDefinition` restituisce l'intero stato React Flow persistito nelle estensioni (viewport, pannelli, ecc.), mentre `serializeWorkflowFromStore` accetta un oggetto `reactFlow` opzionale per sovrascrivere o aggiungere nuove preferenze dell'interfaccia al momento dell'export.
 
 ## Esecuzione del workflow e integrazione con il backend mock
 
@@ -115,7 +143,7 @@ Per garantire la compatibilità con il loader Python viene introdotto `src/workf
 Il visual editor espone un formato di serializzazione pensato per essere esportato in **JSON** o in **YAML** senza modifiche. La definizione è disponibile in `src/workflow-format.ts` ed è descritta dai seguenti elementi principali:
 
 - `version`: identifica il formato supportato (`datapizza.workflow/v1`).
-- `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore con contatti, tag, identificativo esterno, timestamp).
+- `metadata`: informazioni contestuali sul workflow (nome, descrizione, autore con contatti, tag, categoria, icona, identificativo esterno, timestamp).
 - `nodes`: elenco dei nodi con tipo logico (`input`, `task`, `output`), posizione nel canvas, etichetta visuale e configurazioni specifiche (`data`).
 - `edges`: collegamenti direzionali tra nodi con eventuali metadati (es. etichette, riferimenti a porte specifiche).
 - `extensions`: spazio opzionale per impostazioni di frontend e backend. Le estensioni correnti includono `reactFlow` (viewport, stato pannelli, preferenze di snapping) per ripristinare l'interfaccia e `backend` per passare suggerimenti all'esecutore.
@@ -131,6 +159,8 @@ Il file `src/workflow-format.ts` espone l'elenco dei campi serializzati mentre i
 | `name` | Sì | string | Deve essere non vuota sia lato frontend che backend.【F:visual-editor/src/workflow-format.ts†L18-L28】【F:visual-editor/backend/app/models.py†L30-L57】 |
 | `description` | No | string | Testo descrittivo libero. |
 | `tags` | No | string[] | Il backend vieta valori vuoti o composti da spazi.【F:visual-editor/backend/app/models.py†L59-L63】 |
+| `category` | No | string | Categoria logica usata dal catalogo (es. `ml`, `etl`, `orchestration`).【F:visual-editor/src/workflow-format.ts†L18-L33】 |
+| `icon` | No | string | Emoji o icona mostrata nei cataloghi e nelle anteprime.【F:visual-editor/src/workflow-format.ts†L18-L33】 |
 | `author` | No | oggetto | Se presente richiede `name` non vuoto e opzionalmente `email` valida.【F:visual-editor/backend/app/models.py†L12-L24】 |
 | `externalId`, `createdAt`, `updatedAt` | No | string | Identificativi o timestamp ISO8601 opzionali.【F:visual-editor/src/workflow-format.ts†L26-L28】【F:visual-editor/backend/app/models.py†L41-L51】 |
 
@@ -185,6 +215,8 @@ Il backend ora utilizza `DatapizzaWorkflowExecutor`, un motore che risolve dinam
     "name": "ML Pipeline Demo",
     "description": "Esempio di pipeline di machine learning composto da fasi sequenziali.",
     "tags": ["demo", "ml"],
+    "category": "ml",
+    "icon": "🤖",
     "author": { "name": "Datapizza", "email": "editor@datapizza.ai" },
     "externalId": "wf-demo-001",
     "createdAt": "2024-01-01T00:00:00.000Z",

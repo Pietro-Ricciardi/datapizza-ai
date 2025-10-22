@@ -14,6 +14,8 @@ const sampleWorkflow: WorkflowDefinition = {
     name: "Data preparation",
     description: "Dimostrazione di workflow completo",
     tags: ["demo", "ml"],
+    category: "ml",
+    icon: "🤖",
     author: { name: "Datapizza", email: "editor@datapizza.ai" },
     externalId: "wf-demo-001",
     createdAt: "2024-04-01T09:00:00.000Z",
