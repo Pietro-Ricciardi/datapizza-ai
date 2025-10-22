@@ -41,6 +41,27 @@ Per ampliare la libreria modifica `src/data/workflow-templates.ts`:
 3. Aggiorna `WORKFLOW_TEMPLATE_CATEGORIES` se vuoi introdurre nuove categorie o descrizioni.
 4. Il drawer raggruppa automaticamente i nuovi elementi e li rende disponibili al drag & drop senza ulteriori modifiche.
 
+## Internazionalizzazione e accessibilità
+
+L'interfaccia supporta più lingue tramite risorse locali definite in `src/i18n/resources.ts`. Ogni lingua espone lo stesso set di
+chiavi (`header`, `workflow`, `template`, ecc.) per garantire parità funzionale.
+
+- **Aggiungere una lingua**: duplica una delle voci esistenti nell'oggetto `translations`, traduci i testi mantenendo eventuali
+  interpolazioni (es. funzioni come `importedMessage`) e aggiorna `locales` con il nome umano della lingua. Non modificare la struttura delle chiavi
+  per evitare regressioni.
+- **Verifica rapida**: avvia l'app con `npm run dev`, utilizza il selettore di lingua nell'header e assicurati che tutti i pannelli
+  riflettano la traduzione. Se aggiungi nuove chiavi ricorda di aggiornare sia le lingue esistenti sia gli eventuali test.
+
+Le azioni principali (catalogo, import/export, esecuzione) sono azionabili da tastiera e presentano indicatori `:focus-visible`
+ad alto contrasto. Ogni modifica all'interfaccia dovrebbe conservare o migliorare questi comportamenti.
+
+- **Focus e scorciatoie**: verifica che i pulsanti chiave siano raggiungibili tramite `Tab` e prova le scorciatoie documentate
+  nell'header (`Ctrl+Shift+L`, `Ctrl+Shift+I`, `Ctrl+Shift+E`, `Ctrl+Invio`).
+- **Contrasto**: controlla che testi e stati (hover, focus, errore) rispettino i requisiti WCAG AA/AAA. Puoi utilizzare strumenti
+  come le estensioni Axe o Lighthouse durante `npm run dev` per ottenere un report automatico.
+- **Assistive technology**: le finestre modali e i drawer impostano gli attributi ARIA (`role="dialog"`, `aria-modal`, `aria-label`).
+  Se introduci nuovi componenti interattivi, replica questi pattern e includi messaggi `aria-live` quando necessario.
+
 ## Setup iniziale
 
 Il frontend è stato inizializzato con [Vite](https://vitejs.dev/) utilizzando il template **React + TypeScript**. La struttura generata fornisce un punto di partenza minimale con hot module replacement e tooling TypeScript già configurato. L'interfaccia include ora un canvas interattivo basato su [React Flow](https://reactflow.dev/) per la rappresentazione dei workflow e uno store condiviso costruito con [Zustand](https://zustand-demo.pmnd.rs/) per governare nodi e connessioni.

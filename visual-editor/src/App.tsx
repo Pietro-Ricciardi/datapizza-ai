@@ -68,6 +68,14 @@ import {
 } from "./data/workflow-templates";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { TimelineFilter } from "./components/ExecutionHistoryTimeline";
+import {
+  availableLocales,
+  defaultLocale,
+  normalizeLocale,
+  useTranslations,
+  type Locale,
+} from "./i18n";
+import type { Translations } from "./i18n/resources";
 
 const NodeInspector = lazy(() => import("./components/NodeInspector"));
 const ExecutionHistoryTimeline = lazy(
@@ -97,6 +105,9 @@ type AppHeaderProps = {
   workflowName: string;
   workflowIcon?: string;
   exportMenuOpen: boolean;
+  locale: Locale;
+  onLocaleChange: (locale: Locale) => void;
+  translations: Translations[Locale];
 };
 
 type LibraryDrawerProps = {
@@ -107,6 +118,7 @@ type LibraryDrawerProps = {
   onClose: () => void;
   onApplyTemplate: (templateId: string) => void;
   onNodeDragStart: (event: DragEvent<HTMLElement>, template: NodeTemplate) => void;
+  translations: Translations[Locale];
 };
 
 type ExportFormat = "json" | "yaml";
@@ -131,14 +143,7 @@ type ImportWorkflowDialogProps = {
   onImportFile: (file: File) => Promise<void>;
   importing: boolean;
   error?: string;
-};
-
-const statusLabels: Record<string, string> = {
-  idle: "In attesa",
-  pending: "In coda",
-  running: "In esecuzione",
-  completed: "Completato",
-  failed: "Fallito",
+  translations: Translations[Locale];
 };
 
 const initialTemplate = WORKFLOW_TEMPLATES[0];
@@ -198,11 +203,19 @@ const slugify = (value: string): string =>
     .toLowerCase();
 
 function SidebarSection({ title, description, children, id }: SidebarSectionProps) {
+  const headingId = id ? `${id}-title` : undefined;
+  const descriptionId = description ? `${id}-description` : undefined;
   return (
-    <section className="sidebar-section" id={id}>
+    <section
+      className="sidebar-section"
+      id={id}
+      role="region"
+      aria-labelledby={headingId}
+      aria-describedby={description ? descriptionId : undefined}
+    >
       <header className="sidebar-section__header">
-        <h2>{title}</h2>
-        {description ? <p>{description}</p> : null}
+        <h2 id={headingId}>{title}</h2>
+        {description ? <p id={descriptionId}>{description}</p> : null}
       </header>
       <div className="sidebar-section__body">{children}</div>
     </section>
@@ -220,7 +233,11 @@ function AppHeader({
   workflowName,
   workflowIcon,
   exportMenuOpen,
+  locale,
+  onLocaleChange,
+  translations,
 }: AppHeaderProps) {
+  const { header, aria, locales } = translations;
   const categoryInfo =
     WORKFLOW_TEMPLATE_CATEGORIES[activeTemplate.category] ??
     ({ label: activeTemplate.category, description: "" } as const);
@@ -228,28 +245,35 @@ function AppHeader({
     templateSource === "import"
       ? workflowIcon || "📥"
       : activeTemplate.icon;
-  const badgeLabel = templateSource === "import" ? "Import manuale" : categoryInfo.label;
+  const badgeLabel =
+    templateSource === "import" ? header.importedBadge : categoryInfo.label ?? header.templateCategoryFallback;
+  const themeToggleLabel = theme === "light" ? header.themeToggle.light : header.themeToggle.dark;
+  const languageSelectId = "app-language-select";
+  const languageLabelId = `${languageSelectId}-label`;
+
   return (
     <header className="app__header" role="banner">
       <div className="app__header-layout">
         <div className="app__header-copy">
-          <h1>Workflow Visual Editor</h1>
-          <p>
-            Crea, orchestra e testa pipeline di machine learning con un canvas
-            interattivo e pannelli contestuali pensati per team data-driven.
-          </p>
-          <p className="app__header-template" aria-live="polite">
+          <h1>{header.title}</h1>
+          <p>{header.description}</p>
+          <p
+            className="app__header-template"
+            aria-live="polite"
+            aria-atomic="true"
+            aria-label={aria.workflowNameLive}
+          >
             <span className="app__header-template-icon" aria-hidden>
               {headerIcon}
             </span>
             <span>
               {templateSource === "import" ? (
                 <>
-                  Workflow importato: <strong>{workflowName}</strong>
+                  {header.importedPrefix} <strong>{workflowName}</strong>
                 </>
               ) : (
                 <>
-                  Template attivo: <strong>{activeTemplate.name}</strong>
+                  {header.activePrefix} <strong>{activeTemplate.name}</strong>
                 </>
               )}
             </span>
@@ -257,23 +281,52 @@ function AppHeader({
           </p>
           {templateSource === "template" ? (
             <p className="muted-copy" aria-live="polite">
-              Workflow corrente: <strong>{workflowName}</strong>
+              {header.currentWorkflowPrefix} <strong>{workflowName}</strong>
             </p>
           ) : null}
         </div>
-        <div className="app__header-actions">
+        <div className="app__header-actions" role="group" aria-label={translations.shortcuts.heading}>
+          <div className="app__header-language">
+            <label className="visually-hidden" id={languageLabelId} htmlFor={languageSelectId}>
+              {header.languageLabel}
+            </label>
+            <select
+              id={languageSelectId}
+              className="select"
+              value={locale}
+              onChange={(event) => onLocaleChange(event.target.value as Locale)}
+              aria-labelledby={languageLabelId}
+            >
+              {availableLocales.map((option) => (
+                <option key={option} value={option}>
+                  {locales[option] ?? option.toUpperCase()}
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             className="button button--ghost"
             type="button"
             onClick={onToggleLibrary}
+            aria-keyshortcuts="Ctrl+Shift+L"
           >
-            Catalogo workflow
+            {header.libraryButton}
           </button>
-          <button className="button button--ghost" type="button" onClick={onImport}>
-            Importa workflow
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={onImport}
+            aria-keyshortcuts="Ctrl+Shift+I"
+          >
+            {header.importButton}
           </button>
-          <button className="button button--ghost" type="button" onClick={onToggleTheme}>
-            Modalità {theme === "light" ? "scura" : "chiara"}
+          <button
+            className="button button--ghost"
+            type="button"
+            onClick={onToggleTheme}
+            aria-label={aria.themeToggle}
+          >
+            {themeToggleLabel}
           </button>
           <button
             className="button button--primary"
@@ -281,9 +334,11 @@ function AppHeader({
             onClick={onToggleExportMenu}
             aria-expanded={exportMenuOpen}
             aria-haspopup="menu"
+            aria-label={aria.exportMenuButton}
             data-export-toggle="true"
+            aria-keyshortcuts="Ctrl+Shift+E"
           >
-            Esporta workflow
+            {header.exportButton}
           </button>
         </div>
       </div>
@@ -299,33 +354,72 @@ function LibraryDrawer({
   onClose,
   onApplyTemplate,
   onNodeDragStart,
+  translations,
 }: LibraryDrawerProps) {
+  const { library } = translations;
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const containerRef = useRef<HTMLElement | null>(null);
+  const dialogTitleId = "library-drawer-title";
+  const dialogDescriptionId = "library-drawer-description";
+
+  useEffect(() => {
+    if (open) {
+      closeButtonRef.current?.focus({ preventScroll: true });
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.removeEventListener("keydown", handler);
+    };
+  }, [open, onClose]);
+
   return (
     <aside
+      ref={containerRef}
       className={`library-drawer${open ? " library-drawer--open" : ""}`}
       aria-hidden={!open}
-      aria-label="Catalogo template e nodi preconfigurati"
+      aria-modal={open ? true : undefined}
+      aria-labelledby={dialogTitleId}
+      aria-describedby={dialogDescriptionId}
+      aria-label={library.ariaLabel}
       role="dialog"
+      tabIndex={-1}
     >
       <div className="library-drawer__header">
         <div>
-          <p className="library-drawer__eyebrow">Libreria</p>
-          <h2 className="library-drawer__title">Workflow e nodi preconfigurati</h2>
+          <p className="library-drawer__eyebrow" id={dialogDescriptionId}>
+            {library.eyebrow}
+          </p>
+          <h2 className="library-drawer__title" id={dialogTitleId}>
+            {library.title}
+          </h2>
         </div>
         <button
+          ref={closeButtonRef}
           className="button button--ghost library-drawer__close"
           type="button"
           onClick={onClose}
-          aria-label="Chiudi catalogo"
+          aria-label={library.closeLabel}
         >
-          Chiudi
+          {library.close}
         </button>
       </div>
       <div className="library-drawer__content">
         <section className="library-drawer__section">
           <header>
-            <h3>Workflow predefiniti</h3>
-            <p>Applica un template per reimpostare rapidamente nodi ed archi.</p>
+            <h3>{library.workflowsTitle}</h3>
+            <p>{library.workflowsDescription}</p>
           </header>
           <div className="template-grid">
             {templates.map((template) => {
@@ -353,8 +447,9 @@ function LibraryDrawer({
                       className="button button--ghost template-card__action"
                       type="button"
                       onClick={() => onApplyTemplate(template.id)}
+                      aria-pressed={isActive}
                     >
-                      {isActive ? "Ricarica" : "Applica"}
+                      {isActive ? library.reload : library.apply}
                     </button>
                   </div>
                 </article>
@@ -364,8 +459,8 @@ function LibraryDrawer({
         </section>
         <section className="library-drawer__section">
           <header>
-            <h3>Nodi preconfigurati</h3>
-            <p>Trascina i nodi nel canvas per arricchire il workflow corrente.</p>
+            <h3>{library.nodesTitle}</h3>
+            <p>{library.nodesDescription}</p>
           </header>
           <div className="node-template-groups">
             {Object.entries(nodeGroups).map(([categoryKey, nodes]) => {
@@ -417,7 +512,13 @@ function ImportWorkflowDialog({
   onImportFile,
   importing,
   error,
+  translations,
 }: ImportWorkflowDialogProps) {
+  const { importDialog } = translations;
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const descriptionId = "import-dialog-description";
+  const hintId = "import-dialog-hint";
+
   const onFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -430,29 +531,41 @@ function ImportWorkflowDialog({
     [onImportFile],
   );
 
+  useEffect(() => {
+    if (open) {
+      fileInputRef.current?.focus({ preventScroll: true });
+    }
+  }, [open]);
+
   if (!open) {
     return null;
   }
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
-      <div className="modal__content">
+    <div
+      className="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="import-dialog-title"
+      aria-describedby={`${descriptionId} ${hintId}`}
+    >
+      <div className="modal__content" role="document">
         <div className="modal__header">
           <div>
-            <p className="modal__eyebrow">Importazione</p>
-            <h2 id="import-dialog-title">Carica un workflow esistente</h2>
+            <p className="modal__eyebrow">{importDialog.eyebrow}</p>
+            <h2 id="import-dialog-title">{importDialog.title}</h2>
           </div>
           <button className="button button--ghost" type="button" onClick={onClose}>
-            Chiudi
+            {importDialog.close}
           </button>
         </div>
-        <p className="modal__description">
-          Seleziona un file <strong>.json</strong>, <strong>.yaml</strong> o <strong>.yml</strong>. Il contenuto verrà migrato alla
-          versione supportata e caricato nel canvas.
+        <p className="modal__description" id={descriptionId}>
+          {importDialog.description}
         </p>
         <label className="form-field" htmlFor="workflow-file">
-          <span className="form-field__label">Definizione workflow</span>
+          <span className="form-field__label">{importDialog.fieldLabel}</span>
           <input
+            ref={fileInputRef}
             id="workflow-file"
             type="file"
             className="form-field__input"
@@ -461,11 +574,14 @@ function ImportWorkflowDialog({
             disabled={importing}
           />
         </label>
-        {importing ? <p className="muted-copy">Analisi del file in corso...</p> : null}
-        {error ? <p className="inline-feedback inline-feedback--error">{error}</p> : null}
-        <p className="muted-copy">
-          Suggerimento: esporta dal backend Datapizza o riutilizza un file creato con questo editor per mantenere compatibili i
-          componenti.
+        {importing ? <p className="muted-copy">{importDialog.loading}</p> : null}
+        {error ? (
+          <p className="inline-feedback inline-feedback--error" role="alert">
+            {error}
+          </p>
+        ) : null}
+        <p className="muted-copy" id={hintId}>
+          {importDialog.hint}
         </p>
       </div>
     </div>
@@ -520,6 +636,32 @@ function WorkflowApp(): JSX.Element {
   const setValidationMetadataStore = useWorkflowStore(workflowSelectors.setValidationMetadata);
 
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
+  const [locale, setLocale] = useState<Locale>(() => {
+    if (typeof window !== "undefined") {
+      const stored = window.localStorage?.getItem("datapizza-visual-editor-locale");
+      if (stored) {
+        return normalizeLocale(stored);
+      }
+      const browserLocale = window.navigator?.language?.split("-")[0] ?? null;
+      return normalizeLocale(browserLocale);
+    }
+    return defaultLocale;
+  });
+  const translations = useTranslations(locale);
+  const statusLabels = translations.status;
+  const t = translations;
+  const validationTexts = t.validation;
+  const { successMessage: validationSuccessMessage, errorMessage: validationErrorMessage } = validationTexts;
+  const templateTexts = t.template;
+  const runnerTexts = t.runner;
+  const historyTexts = t.history;
+  const nodeDetailsTexts = t.nodeDetails;
+  const nodeStatusTexts = t.nodeStatus;
+  const outputsTexts = t.outputs;
+  const workflowTexts = t.workflow;
+  const exportMenuTexts = t.exportMenu;
+  const messages = t.messages;
+  const issueScopeLabels = validationTexts.issueScope;
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const templateMap = useMemo(
     () => new Map<string, WorkflowTemplate>(WORKFLOW_TEMPLATES.map((template) => [template.id, template])),
@@ -555,6 +697,7 @@ function WorkflowApp(): JSX.Element {
   const [templateSource, setTemplateSource] = useState<"template" | "import">("template");
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportMenuRef = useRef<HTMLDivElement | null>(null);
+  const exportMenuFirstItemRef = useRef<HTMLButtonElement | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [importError, setImportError] = useState<string | undefined>(undefined);
@@ -618,12 +761,12 @@ function WorkflowApp(): JSX.Element {
         const chunk = await fetchWorkflowRunLogs(runId);
         appendLogChunk(chunk);
       } catch (error) {
-        console.error("Errore durante il recupero dei log del workflow", error);
+        console.error(messages.logFetchError, error);
       } finally {
         setLogsLoadingRunId((current) => (current === runId ? undefined : current));
       }
     },
-    [appendLogChunk, logsByRun],
+    [appendLogChunk, logsByRun, messages.logFetchError],
   );
 
   useEffect(() => {
@@ -693,6 +836,15 @@ function WorkflowApp(): JSX.Element {
       document.documentElement.dataset.theme = theme;
     }
   }, [theme]);
+
+  useEffect(() => {
+    if (typeof document !== "undefined") {
+      document.documentElement.lang = locale;
+    }
+    if (typeof window !== "undefined") {
+      window.localStorage?.setItem("datapizza-visual-editor-locale", locale);
+    }
+  }, [locale]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -768,6 +920,8 @@ function WorkflowApp(): JSX.Element {
       return;
     }
 
+    exportMenuFirstItemRef.current?.focus({ preventScroll: true });
+
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement | null;
       if (!target) {
@@ -796,6 +950,47 @@ function WorkflowApp(): JSX.Element {
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isExportMenuOpen]);
+
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      const hasCtrlOrMeta = event.ctrlKey || event.metaKey;
+
+      if (hasCtrlOrMeta && event.shiftKey) {
+        if (key === "l") {
+          event.preventDefault();
+          toggleLibrary();
+          return;
+        }
+        if (key === "i") {
+          event.preventDefault();
+          openImportDialog();
+          return;
+        }
+        if (key === "e") {
+          event.preventDefault();
+          setIsExportMenuOpen((open) => !open);
+          return;
+        }
+      }
+
+      if (hasCtrlOrMeta && key === "enter") {
+        event.preventDefault();
+        if (!execution.loading) {
+          void runWorkflow();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleShortcut);
+    return () => {
+      document.removeEventListener("keydown", handleShortcut);
+    };
+  }, [execution.loading, openImportDialog, runWorkflow, toggleLibrary, setIsExportMenuOpen]);
 
   const createWorkflowSnapshot = useCallback(() => {
     return serializeWorkflowFromStore({
@@ -852,14 +1047,12 @@ function WorkflowApp(): JSX.Element {
           try {
             parsed = parseYaml(fileContents);
           } catch (yamlError) {
-            throw new Error(
-              "Impossibile analizzare il file. Assicurati che sia un JSON o YAML valido.",
-            );
+            throw new Error(t.messages.importParseError);
           }
         }
 
         if (!parsed || typeof parsed !== "object") {
-          throw new Error("Il file non contiene una definizione di workflow valida.");
+          throw new Error(t.messages.importInvalidDefinition);
         }
 
         const candidate = parsed as Record<string, unknown>;
@@ -902,11 +1095,11 @@ function WorkflowApp(): JSX.Element {
 
         setIsImportDialogOpen(false);
       } catch (error) {
-        console.error("Impossibile importare il workflow", error);
+        console.error(t.messages.importWorkflowError, error);
         const message =
           error instanceof Error
             ? error.message
-            : "Impossibile importare il workflow: formato non riconosciuto";
+            : t.messages.importWorkflowUnknown;
         setImportError(message);
       } finally {
         setIsImporting(false);
@@ -924,6 +1117,7 @@ function WorkflowApp(): JSX.Element {
       setWorkflowMetadata,
       setIsExportMenuOpen,
       setIsImportDialogOpen,
+      t,
     ],
   );
 
@@ -954,9 +1148,7 @@ function WorkflowApp(): JSX.Element {
         valid: response.valid,
         issues: response.issues,
         source: "remote",
-        message: response.valid
-          ? "Validazione completata dal backend FastAPI."
-          : "Il backend ha rilevato delle incongruenze nella definizione.",
+        message: response.valid ? validationSuccessMessage : validationErrorMessage,
       });
     } catch (error) {
       if (error instanceof WorkflowApiError) {
@@ -976,12 +1168,10 @@ function WorkflowApp(): JSX.Element {
         valid: fallback.valid,
         issues: fallback.issues,
         source: "local",
-        message: fallback.valid
-          ? "Validazione locale completata (fallback)."
-          : "Problemi rilevati dalla validazione locale (fallback).",
+        message: fallback.valid ? validationSuccessMessage : validationErrorMessage,
       });
     }
-  }, [createWorkflowSnapshot]);
+  }, [createWorkflowSnapshot, validationErrorMessage, validationSuccessMessage]);
 
   const onDropNodeTemplate = useCallback(
     (event: DragEvent<HTMLDivElement>) => {
@@ -1047,13 +1237,13 @@ function WorkflowApp(): JSX.Element {
 
   const workflowStatusLabel = useMemo(() => {
     if (execution.loading) {
-      return "In esecuzione";
+      return statusLabels.running;
     }
     if (execution.status in statusLabels) {
-      return statusLabels[execution.status];
+      return statusLabels[execution.status as keyof typeof statusLabels];
     }
     return statusLabels.idle;
-  }, [execution.loading, execution.status]);
+  }, [execution.loading, execution.status, statusLabels]);
 
   const performExecution = useCallback(
     async (
@@ -1116,8 +1306,8 @@ function WorkflowApp(): JSX.Element {
           error instanceof WorkflowApiError
             ? error.message
             : error instanceof DOMException && error.name === "AbortError"
-            ? "Esecuzione annullata dall'utente"
-            : "Errore imprevisto durante l'esecuzione del workflow";
+            ? messages.executionCancelled
+            : messages.executionUnexpectedError;
         failExecution(message);
         throw error;
       }
@@ -1133,6 +1323,8 @@ function WorkflowApp(): JSX.Element {
       completeExecution,
       failExecution,
       appendLogChunk,
+      messages.executionCancelled,
+      messages.executionUnexpectedError,
     ],
   );
 
@@ -1140,7 +1332,10 @@ function WorkflowApp(): JSX.Element {
     return nodes.map((node) => {
       const step = execution.steps[node.id];
       const status = step?.status ?? (execution.loading ? "pending" : "idle");
-      const label = statusLabels[status] ?? statusLabels.idle;
+      const label =
+        status in statusLabels
+          ? statusLabels[status as keyof typeof statusLabels]
+          : statusLabels.idle;
       const validationSummary = nodeValidationSummaries.get(node.id);
       return {
         id: node.id,
@@ -1151,7 +1346,7 @@ function WorkflowApp(): JSX.Element {
         validationSummary,
       } satisfies NodeStatusItem;
     });
-  }, [execution, nodeValidationSummaries, nodes]);
+  }, [execution, nodeValidationSummaries, nodes, statusLabels]);
 
   const selectedNode = useMemo(
     () => nodes.find((node) => node.id === selectedNodeId),
@@ -1194,7 +1389,7 @@ function WorkflowApp(): JSX.Element {
         workflowName: workflowMetadata.name,
       });
     } catch (error) {
-      console.error("Errore durante l'esecuzione del workflow", error);
+      console.error(messages.executionUnexpectedError, error);
     }
   }, [
     createWorkflowSnapshot,
@@ -1202,6 +1397,7 @@ function WorkflowApp(): JSX.Element {
     datasetUri,
     performExecution,
     workflowMetadata.name,
+    messages.executionUnexpectedError,
   ]);
 
   const handleRetry = useCallback(
@@ -1222,10 +1418,10 @@ function WorkflowApp(): JSX.Element {
           workflowName: run.workflowName,
         });
       } catch (error) {
-        console.error("Errore durante il retry dell'esecuzione", error);
+        console.error(messages.retryError, error);
       }
     },
-    [performExecution],
+    [performExecution, messages.retryError],
   );
 
   const handleDownloadArtifacts = useCallback((run: WorkflowRunHistoryItem) => {
@@ -1257,10 +1453,10 @@ function WorkflowApp(): JSX.Element {
           archived: summary.archived,
         });
       } catch (error) {
-        console.error("Errore durante l'archiviazione dell'esecuzione", error);
+        console.error(messages.archiveError, error);
       }
     },
-    [archiveHistoryEntry, updateHistoryRun],
+    [archiveHistoryEntry, updateHistoryRun, messages.archiveError],
   );
 
   const handleSelectRun = useCallback((runId: string) => {
@@ -1319,27 +1515,33 @@ function WorkflowApp(): JSX.Element {
         workflowName={workflowMetadata.name}
         workflowIcon={workflowMetadata.icon}
         exportMenuOpen={isExportMenuOpen}
+        locale={locale}
+        onLocaleChange={setLocale}
+        translations={t}
       />
       {isExportMenuOpen ? (
         <div
           ref={exportMenuRef}
           className="export-menu"
           role="menu"
-          aria-label="Formati di esportazione del workflow"
+          aria-label={exportMenuTexts.ariaLabel}
         >
           <button
+            ref={exportMenuFirstItemRef}
             type="button"
             className="export-menu__item"
             onClick={() => downloadWorkflow("json")}
+            aria-keyshortcuts="Ctrl+Shift+E"
           >
-            Scarica JSON
+            {exportMenuTexts.downloadJson}
           </button>
           <button
             type="button"
             className="export-menu__item"
             onClick={() => downloadWorkflow("yaml")}
+            aria-keyshortcuts="Ctrl+Shift+E"
           >
-            Scarica YAML
+            {exportMenuTexts.downloadYaml}
           </button>
         </div>
       ) : null}
@@ -1349,6 +1551,7 @@ function WorkflowApp(): JSX.Element {
         onImportFile={handleImportFile}
         importing={isImporting}
         error={importError}
+        translations={t}
       />
       <LibraryDrawer
         open={isLibraryOpen}
@@ -1361,9 +1564,10 @@ function WorkflowApp(): JSX.Element {
         }}
         onApplyTemplate={applyTemplate}
         onNodeDragStart={onNodeTemplateDragStart}
+        translations={t}
       />
       <main className="app__layout">
-        <section className="app__canvas" aria-label="Canvas del workflow">
+        <section className="app__canvas" aria-label={workflowTexts.canvasAria}>
           <ReactFlow
             className="workflow-canvas"
             style={{ width: "100%", height: "100%" }}
@@ -1387,11 +1591,11 @@ function WorkflowApp(): JSX.Element {
             <Background gap={16} color="var(--color-border-subtle)" />
           </ReactFlow>
         </section>
-        <aside className="app__sidebar" aria-label="Pannello laterale del workflow">
+        <aside className="app__sidebar" aria-label={workflowTexts.sidebarAria}>
           <SidebarSection
             id="template-info"
-            title="Dettagli template"
-            description="Riferimenti rapidi al template attivo e alle sue note principali."
+            title={templateTexts.title}
+            description={templateTexts.description}
           >
             <div className="template-summary">
               <span className="template-summary__icon" aria-hidden>
@@ -1402,16 +1606,12 @@ function WorkflowApp(): JSX.Element {
               <div className="template-summary__content">
                 <strong>{workflowMetadata.name}</strong>
                 <span className="template-category-badge">
-                  {templateSource === "import" ? "Import manuale" : templateCategoryInfo.label}
+                  {templateSource === "import" ? t.header.importedBadge : templateCategoryInfo.label}
                 </span>
               </div>
             </div>
             {templateSource === "import" ? (
-              <p className="muted-copy">
-                Definizione caricata da file. Il workflow è stato migrato automaticamente alla versione
-                {" "}
-                <strong>{WORKFLOW_FORMAT_VERSION}</strong>.
-              </p>
+              <p className="muted-copy">{templateTexts.importedMessage(WORKFLOW_FORMAT_VERSION)}</p>
             ) : null}
             {workflowMetadata.description ? (
               <p className="muted-copy">{workflowMetadata.description}</p>
@@ -1419,19 +1619,19 @@ function WorkflowApp(): JSX.Element {
             <dl className="meta-grid">
               {workflowMetadata.author ? (
                 <div>
-                  <dt>Autore</dt>
+                  <dt>{templateTexts.authorLabel}</dt>
                   <dd>{workflowMetadata.author.name}</dd>
                 </div>
               ) : null}
               {workflowMetadata.tags && workflowMetadata.tags.length > 0 ? (
                 <div>
-                  <dt>Tag</dt>
+                  <dt>{templateTexts.tagsLabel}</dt>
                   <dd>{workflowMetadata.tags.join(", ")}</dd>
                 </div>
               ) : null}
               {workflowMetadata.createdAt ? (
                 <div>
-                  <dt>Creato il</dt>
+                  <dt>{templateTexts.createdAtLabel}</dt>
                   <dd>{new Date(workflowMetadata.createdAt).toLocaleDateString()}</dd>
                 </div>
               ) : null}
@@ -1439,28 +1639,25 @@ function WorkflowApp(): JSX.Element {
           </SidebarSection>
           <SidebarSection
             id="workflow-validation"
-            title="Validazione workflow"
-            description="Monitora i problemi del grafo in tempo reale e avvia la validazione remota con il backend FastAPI."
+            title={validationTexts.title}
+            description={validationTexts.description}
           >
             <section className="validation-panel">
               <header className="validation-panel__header">
-                <h3>Analisi in tempo reale</h3>
+                <h3>{validationTexts.realtimeTitle}</h3>
                 <div className="validation-panel__summary">
                   <span className="validation-pill validation-pill--error">
-                    Errori
+                    {validationTexts.errorsLabel}
                     <strong>{validation.errors}</strong>
                   </span>
                   <span className="validation-pill validation-pill--warning">
-                    Avvisi
+                    {validationTexts.warningsLabel}
                     <strong>{validation.warnings}</strong>
                   </span>
                 </div>
               </header>
               {validation.issues.length === 0 ? (
-                <p className="muted-copy">
-                  Nessun problema rilevato sul grafo corrente. Collega i nodi o modifica i parametri per mantenere il workflow
-                  consistente.
-                </p>
+                <p className="muted-copy">{validationTexts.emptyState}</p>
               ) : (
                 <ul className="validation-issues-list">
                   {validation.issues.map((issue) => (
@@ -1475,10 +1672,10 @@ function WorkflowApp(): JSX.Element {
                           </span>
                           <strong>
                             {issue.scope === "workflow"
-                              ? "Workflow"
+                              ? issueScopeLabels.workflow
                               : issue.scope === "edge"
-                              ? `Arco ${issue.targetId ?? "sconosciuto"}`
-                              : `Nodo ${issue.targetId ?? "sconosciuto"}`}
+                              ? `${issueScopeLabels.edge} ${issue.targetId ?? issueScopeLabels.unknown}`
+                              : `${issueScopeLabels.node} ${issue.targetId ?? issueScopeLabels.unknown}`}
                           </strong>
                         </div>
                         <p className="validation-issues-list__message">{issue.message}</p>
@@ -1508,7 +1705,7 @@ function WorkflowApp(): JSX.Element {
             <div className="validation-divider" role="presentation" />
             <section className="validation-panel">
               <header className="validation-panel__header">
-                <h3>Validazione remota</h3>
+                <h3>{validationTexts.remoteTitle}</h3>
               </header>
               <div className="validation-actions">
                 <button
@@ -1517,15 +1714,15 @@ function WorkflowApp(): JSX.Element {
                   onClick={validateWorkflow}
                   disabled={validationState.status === "loading"}
                 >
-                  {validationState.status === "loading" ? "Validazione in corso..." : "Valida definizione"}
+                  {validationState.status === "loading"
+                    ? validationTexts.validatingButton
+                    : validationTexts.validateButton}
                 </button>
               </div>
               {validationState.status === "idle" ? (
-                <p className="muted-copy">
-                  Avvia la validazione per ottenere un riepilogo degli eventuali problemi strutturali e semantici del workflow.
-                </p>
+                <p className="muted-copy">{validationTexts.idleMessage}</p>
               ) : validationState.status === "loading" ? (
-                <p className="muted-copy">Analisi della definizione in corso...</p>
+                <p className="muted-copy">{validationTexts.loadingMessage}</p>
               ) : (
                 <div className="validation-result">
                   <p
@@ -1535,11 +1732,13 @@ function WorkflowApp(): JSX.Element {
                   >
                     {validationState.message ??
                       (validationState.valid
-                        ? "La definizione è stata validata correttamente."
-                        : "La definizione contiene alcune incongruenze.")}
+                        ? validationTexts.successMessage
+                        : validationTexts.errorMessage)}
                     {validationState.source ? (
                       <span className="validation-result__source">
-                        {validationState.source === "remote" ? " (risposta backend)" : " (validator locale)"}
+                        {validationState.source === "remote"
+                          ? validationTexts.sourceRemote
+                          : validationTexts.sourceLocal}
                       </span>
                     ) : null}
                   </p>
@@ -1556,31 +1755,31 @@ function WorkflowApp(): JSX.Element {
           </SidebarSection>
           <SidebarSection
             id="workflow-runner"
-            title="Esegui workflow"
-            description="Invia il grafo corrente al backend FastAPI per verificarne la serializzazione e le opzioni runtime."
+            title={runnerTexts.title}
+            description={runnerTexts.description}
           >
             <div className="form-grid">
               <label className="form-field" htmlFor="runtime-environment">
-                <span className="form-field__label">Ambiente runtime</span>
+                <span className="form-field__label">{runnerTexts.environmentLabel}</span>
                 <input
                   id="runtime-environment"
                   className="form-field__input"
                   type="text"
                   value={runtimeEnvironment}
                   onChange={(event) => setRuntimeEnvironment(event.target.value)}
-                  placeholder="es. staging"
+                  placeholder={runnerTexts.environmentPlaceholder}
                   autoComplete="off"
                 />
               </label>
               <label className="form-field" htmlFor="dataset-uri">
-                <span className="form-field__label">Dataset sorgente (URI)</span>
+                <span className="form-field__label">{runnerTexts.datasetLabel}</span>
                 <input
                   id="dataset-uri"
                   className="form-field__input"
                   type="text"
                   value={datasetUri}
                   onChange={(event) => setDatasetUri(event.target.value)}
-                  placeholder="es. s3://bucket/path"
+                  placeholder={runnerTexts.datasetPlaceholder}
                   autoComplete="off"
                 />
               </label>
@@ -1589,8 +1788,9 @@ function WorkflowApp(): JSX.Element {
                 type="button"
                 onClick={runWorkflow}
                 disabled={execution.loading}
+                aria-keyshortcuts="Ctrl+Enter"
               >
-                {execution.loading ? "Esecuzione in corso..." : "Esegui workflow"}
+                {execution.loading ? runnerTexts.runningButton : runnerTexts.runButton}
               </button>
             </div>
             {execution.error ? (
@@ -1598,12 +1798,12 @@ function WorkflowApp(): JSX.Element {
             ) : null}
             <dl className="meta-grid">
               <div>
-                <dt>Stato</dt>
+                <dt>{runnerTexts.statusLabel}</dt>
                 <dd>{workflowStatusLabel}</dd>
               </div>
           {execution.runId ? (
             <div>
-              <dt>Run ID</dt>
+              <dt>{runnerTexts.runIdLabel}</dt>
               <dd>{execution.runId}</dd>
             </div>
           ) : null}
@@ -1612,10 +1812,10 @@ function WorkflowApp(): JSX.Element {
 
       <SidebarSection
         id="workflow-history"
-        title="Cronologia esecuzioni"
-        description="Consulta le esecuzioni precedenti, ripetile e scarica gli artefatti generati."
+        title={historyTexts.title}
+        description={historyTexts.description}
       >
-        <Suspense fallback={<p className="muted-copy">Caricamento cronologia…</p>}>
+        <Suspense fallback={<p className="muted-copy">{historyTexts.loading}</p>}>
           <ExecutionHistoryTimeline
             runs={history}
             filter={timelineFilter}
@@ -1627,14 +1827,14 @@ function WorkflowApp(): JSX.Element {
             onArchive={handleArchiveRun}
           />
         </Suspense>
-        <Suspense fallback={<p className="muted-copy">Caricamento log…</p>}>
+        <Suspense fallback={<p className="muted-copy">{historyTexts.logsLoading}</p>}>
           <LogViewer
             logs={selectedLogs}
             loading={isLogLoading}
             emptyMessage={
               selectedRun
-                ? "Nessun log disponibile per questa esecuzione."
-                : "Seleziona una run per visualizzare i log in streaming."
+                ? historyTexts.emptyLogs
+                : historyTexts.selectRun
             }
           />
         </Suspense>
@@ -1642,31 +1842,27 @@ function WorkflowApp(): JSX.Element {
 
       <SidebarSection
         id="node-details"
-        title="Dettagli nodo"
-        description="Seleziona un nodo dal canvas per modificarne label, tipo e parametri JSON."
+        title={nodeDetailsTexts.title}
+        description={nodeDetailsTexts.description}
           >
             {selectedNode ? (
-              <Suspense fallback={<p className="muted-copy">Caricamento dettagli nodo…</p>}>
+              <Suspense fallback={<p className="muted-copy">{nodeDetailsTexts.loading}</p>}>
                 <NodeInspector node={selectedNode} />
               </Suspense>
             ) : (
-              <p className="muted-copy">
-                Nessun nodo selezionato. Clicca su un nodo nel canvas per visualizzare i dettagli.
-              </p>
+              <p className="muted-copy">{nodeDetailsTexts.empty}</p>
             )}
           </SidebarSection>
 
-          <SidebarSection title="Stato dei nodi">
+          <SidebarSection title={nodeStatusTexts.title}>
             <NodeStatusList items={nodeStatuses} />
           </SidebarSection>
 
-          <SidebarSection title="Output esecuzione">
+          <SidebarSection title={outputsTexts.title}>
             {execution.outputs ? (
               <pre className="code-block">{JSON.stringify(execution.outputs, null, 2)}</pre>
             ) : (
-              <p className="muted-copy">
-                Nessun output disponibile. Avvia un'esecuzione per visualizzare i risultati.
-              </p>
+              <p className="muted-copy">{outputsTexts.empty}</p>
             )}
           </SidebarSection>
         </aside>
