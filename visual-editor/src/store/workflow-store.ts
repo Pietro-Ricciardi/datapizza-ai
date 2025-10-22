@@ -26,6 +26,7 @@ import {
   type WorkflowValidationReport,
   type WorkflowValidationScope,
   type WorkflowValidationSeverity,
+  type NodeValidationErrorMap,
 } from "../services/workflow-validation";
 import type {
   WorkflowRunStatusResponse,
@@ -108,6 +109,7 @@ interface WorkflowValidationActions {
 type WorkflowValidationContextState = {
   validationMetadata?: WorkflowMetadata;
   validation: WorkflowValidationState;
+  nodeValidationErrors: NodeValidationErrorMap;
 };
 
 export interface WorkflowRunHistoryItem {
@@ -178,6 +180,7 @@ export const useWorkflowStore = create<WorkflowStore>()(
   execution: createDefaultExecutionState(),
   validationMetadata: undefined,
   validation: createInitialValidationState(),
+  nodeValidationErrors: {},
   history: [],
   initialize: (nodes, edges) => {
     set(
@@ -424,11 +427,14 @@ export const useWorkflowStore = create<WorkflowStore>()(
       metadata: state.validationMetadata,
     });
 
+    const mapped = mapValidationReport(report, set, get);
+
     set({
       validation: {
-        ...mapValidationReport(report, set, get),
+        ...mapped.validation,
         lastUpdatedAt: Date.now(),
       },
+      nodeValidationErrors: mapped.nodeValidationErrors,
     });
   },
 })),
@@ -459,6 +465,7 @@ export const workflowSelectors = {
   archiveHistoryRun: (state: WorkflowStore) => state.archiveHistoryRun,
   updateExecutionFromRun: (state: WorkflowStore) => state.updateExecutionFromRun,
   validation: (state: WorkflowStore) => state.validation,
+  nodeValidationErrors: (state: WorkflowStore) => state.nodeValidationErrors,
   setValidationMetadata: (state: WorkflowStore) => state.setValidationMetadata,
   updateNodeLabel: (state: WorkflowStore) => state.updateNodeLabel,
   updateNodeKind: (state: WorkflowStore) => state.updateNodeKind,
@@ -469,12 +476,18 @@ function mapValidationReport(
   report: WorkflowValidationReport,
   set: StoreSet,
   get: StoreGet,
-): Omit<WorkflowValidationState, "lastUpdatedAt"> {
+): {
+  validation: Omit<WorkflowValidationState, "lastUpdatedAt">;
+  nodeValidationErrors: NodeValidationErrorMap;
+} {
   const issues = report.issues.map((issue) => mapIssue(issue, set, get));
   return {
-    issues,
-    errors: report.errors,
-    warnings: report.warnings,
+    validation: {
+      issues,
+      errors: report.errors,
+      warnings: report.warnings,
+    },
+    nodeValidationErrors: report.nodeValidationErrors,
   };
 }
 

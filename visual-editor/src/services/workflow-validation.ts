@@ -1,5 +1,7 @@
+import Ajv, { type ErrorObject, type ValidateFunction } from "ajv";
 import type { Edge, Node } from "reactflow";
 import type { WorkflowMetadata } from "../workflow-format";
+import { COMPONENT_SCHEMAS } from "../data/component-schemas";
 
 export type WorkflowValidationSeverity = "error" | "warning";
 export type WorkflowValidationScope = "workflow" | "node" | "edge";
@@ -54,12 +56,21 @@ export interface WorkflowValidationReport {
   issues: WorkflowValidationIssueBlueprint[];
   warnings: number;
   errors: number;
+  nodeValidationErrors: NodeValidationErrorMap;
 }
 
 type NodeValidationSummary = {
   incoming: Edge[];
   outgoing: Edge[];
 };
+
+export type NodeValidationErrorMap = Record<string, string[]>;
+
+type ComponentValidator = ValidateFunction<Record<string, unknown>>;
+
+const ajv = new Ajv({ allErrors: true, strict: false });
+
+const validatorCache: Map<string, ComponentValidator> = new Map();
 
 type DegreeMap = Map<string, NodeValidationSummary>;
 
@@ -82,11 +93,42 @@ export function validateWorkflowGraph({
   evaluateMetadata(metadata, () => nextIssueId("metadata"), issues);
   evaluateEdges(edges, nodeMap, () => nextIssueId("edge"), issues);
   evaluateNodes(nodes, degrees, nodeMap, () => nextIssueId("node"), issues);
+  const nodeValidationErrors = evaluateNodeSchemas(
+    nodes,
+    () => nextIssueId("schema"),
+    issues,
+  );
 
   const warnings = issues.filter((issue) => issue.severity === "warning").length;
   const errors = issues.filter((issue) => issue.severity === "error").length;
 
-  return { issues, warnings, errors };
+  return { issues, warnings, errors, nodeValidationErrors };
+}
+
+export type ComponentValidationResult =
+  | { valid: true; errors: [] }
+  | { valid: false; errors: string[] };
+
+export function validateComponentParameters(
+  component: string,
+  parameters: Record<string, unknown>,
+): ComponentValidationResult {
+  const validator = getComponentValidator(component);
+  if (!validator) {
+    return { valid: true, errors: [] };
+  }
+
+  const payload = parameters ?? {};
+  const valid = validator(payload);
+  if (valid) {
+    return { valid: true, errors: [] };
+  }
+
+  const formatted = formatAjvErrors(validator.errors);
+  return {
+    valid: false,
+    errors: formatted.length > 0 ? formatted : ["Parametri non validi."],
+  };
 }
 
 function evaluateMetadata(
@@ -338,6 +380,42 @@ function evaluateNodes(
   });
 }
 
+function evaluateNodeSchemas(
+  nodes: Node[],
+  idFactory: () => string,
+  issues: WorkflowValidationIssueBlueprint[],
+): NodeValidationErrorMap {
+  const errorMap: NodeValidationErrorMap = {};
+
+  nodes.forEach((node) => {
+    const data = (node.data ?? {}) as Record<string, unknown>;
+    const component = typeof data.component === "string" ? data.component : undefined;
+    if (!component) {
+      return;
+    }
+
+    const parameters = extractNodeParameters(data.parameters) ?? {};
+    const validation = validateComponentParameters(component, parameters);
+    if (!validation.valid) {
+      errorMap[node.id] = validation.errors;
+      const [first, ...rest] = validation.errors;
+      const message = first
+        ? `Parametri non validi per ${component}: ${first}`
+        : `Parametri non validi per ${component}.`;
+      issues.push({
+        id: idFactory(),
+        scope: "node",
+        targetId: node.id,
+        severity: "error",
+        message,
+        description: rest.length > 0 ? rest.join(" ") : undefined,
+      });
+    }
+  });
+
+  return errorMap;
+}
+
 function buildDegreeMap(nodes: Node[], edges: Edge[]): DegreeMap {
   const map: DegreeMap = new Map();
   nodes.forEach((node) => {
@@ -389,6 +467,80 @@ function determineNodeKind(node: Node): "input" | "output" | "task" {
 }
 
 type ConnectionDirection = "incoming" | "outgoing";
+
+function getComponentValidator(component: string): ComponentValidator | undefined {
+  if (validatorCache.has(component)) {
+    return validatorCache.get(component);
+  }
+
+  const schema = COMPONENT_SCHEMAS[component];
+  if (!schema) {
+    return undefined;
+  }
+
+  const validator = ajv.compile(schema);
+  validatorCache.set(component, validator);
+  return validator;
+}
+
+function formatAjvErrors(errors: ErrorObject[] | null | undefined): string[] {
+  if (!errors || errors.length === 0) {
+    return [];
+  }
+
+  return errors.map((error) => formatAjvError(error));
+}
+
+function formatAjvError(error: ErrorObject): string {
+  const path = extractErrorPath(error);
+
+  switch (error.keyword) {
+    case "required": {
+      const missing = (error.params as { missingProperty: string }).missingProperty;
+      return `Manca il campo obbligatorio "${missing}".`;
+    }
+    case "type": {
+      const expected = (error.params as { type: string }).type;
+      return `Il campo "${path}" deve essere di tipo ${expected}.`;
+    }
+    case "minLength": {
+      const limit = (error.params as { limit: number }).limit;
+      return `Il campo "${path}" deve contenere almeno ${limit} caratteri.`;
+    }
+    case "maxLength": {
+      const limit = (error.params as { limit: number }).limit;
+      return `Il campo "${path}" può contenere al massimo ${limit} caratteri.`;
+    }
+    case "minimum": {
+      const limit = (error.params as { limit: number }).limit;
+      return `Il campo "${path}" deve essere maggiore o uguale a ${limit}.`;
+    }
+    case "additionalProperties": {
+      const property = (error.params as { additionalProperty: string }).additionalProperty;
+      return `Il campo "${property}" non è supportato dal componente.`;
+    }
+    default:
+      return error.message ? `Parametri non validi: ${error.message}.` : "Parametri non validi.";
+  }
+}
+
+function extractErrorPath(error: ErrorObject): string {
+  if (error.instancePath && error.instancePath.length > 1) {
+    return error.instancePath.slice(1).replace(/\//g, ".");
+  }
+
+  if (typeof (error.params as { missingProperty?: string }).missingProperty === "string") {
+    return (error.params as { missingProperty: string }).missingProperty;
+  }
+
+  if (
+    typeof (error.params as { additionalProperty?: string }).additionalProperty === "string"
+  ) {
+    return (error.params as { additionalProperty: string }).additionalProperty;
+  }
+
+  return "parametri";
+}
 
 function buildConnectionQuickFix(
   node: Node,
