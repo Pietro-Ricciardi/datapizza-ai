@@ -134,6 +134,7 @@ export function TemplateCatalog({
       aria-label={library.ariaLabel}
       role="dialog"
       tabIndex={-1}
+      data-tour-id="guided-tour-catalog"
     >
       <div className="library-drawer__header">
         <div>
