@@ -12,6 +12,17 @@ Il visual editor espone un layout a sezioni riutilizzabili: header compatto con 
 2. Durante la standup, l'utente passa alla modalità scura con il toggle dedicato e monitora lo stato dei nodi nel pannello "Stato dei nodi", che evidenzia i badge di stato coerenti con la palette aggiornata.
 3. Con i breakpoint desktop estesi il canvas occupa la colonna principale, mentre la sidebar modulare resta ancorata a destra e consente di lanciare una nuova esecuzione, consultare metadati e leggere l'output JSON formattato.
 
+## Tour guidato dell'interfaccia
+
+Un nuovo componente `GuidedTour` (`src/components/GuidedTour.tsx`) introduce un walkthrough interattivo costruito con [`react-joyride`](https://docs.react-joyride.com/). Il pulsante **Avvia tour** dell'header attiva una sequenza di quattro step che mette in evidenza:
+
+- **Header** – scorciatoie per lingua, tema e import/export.
+- **Canvas React Flow** – costruzione visuale del grafo con minimappa e controlli.
+- **Sidebar contestuale** – riepilogo template, validazione e pannelli di esecuzione.
+- **Catalogo** – drawer laterale con template e nodi preconfigurati; lo step apre automaticamente il catalogo e lo richiude al termine se era inizialmente nascosto.
+
+Lo stato del tour è centralizzato nello store Zustand (`src/store/workflow-store.ts`) nella sezione `guidedTour`: il completamento viene salvato in `localStorage` per evitare di riproporre la sequenza ad ogni sessione, mentre il toggle dell'header consente di riavviare manualmente il tour in qualsiasi momento.
+
 ## Catalogo template e nodi preconfigurati
 
 Il pulsante **Catalogo workflow** presente nell'header apre un drawer laterale con due funzionalità principali:

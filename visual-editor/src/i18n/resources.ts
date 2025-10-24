@@ -192,6 +192,41 @@ export const translations = {
       toggleExport: "Apri il menu di esportazione (Ctrl+Shift+E)",
       runWorkflow: "Esegui workflow (Ctrl+Invio)",
     },
+    guidedTour: {
+      toggleLabel: "Avvia tour",
+      runningLabel: "Interrompi tour",
+      toggleDescription: "Mostra una panoramica guidata delle aree principali dell'editor.",
+      completedHint: "Hai già completato il tour, ma puoi riavviarlo in qualsiasi momento.",
+      steps: {
+        header: {
+          title: "Header",
+          content:
+            "La barra superiore raccoglie le azioni rapide per lingua, tema, import/export e catalogo.",
+        },
+        canvas: {
+          title: "Canvas React Flow",
+          content:
+            "Costruisci il workflow trascinando nodi e collegandoli sul canvas. Usa minimappa e controlli per orientarti.",
+        },
+        sidebar: {
+          title: "Sidebar contestuale",
+          content:
+            "Il pannello laterale mostra template, validazione e strumenti di esecuzione legati al workflow selezionato.",
+        },
+        catalog: {
+          title: "Catalogo",
+          content:
+            "Apri il catalogo per applicare template pronti e trascinare nodi preconfigurati nel canvas.",
+        },
+      },
+      locale: {
+        back: "Indietro",
+        close: "Chiudi",
+        last: "Fine",
+        next: "Avanti",
+        skip: "Salta tour",
+      },
+    },
   },
   en: {
     locales: {
@@ -383,6 +418,41 @@ export const translations = {
       openImport: "Open the import dialog (Ctrl+Shift+I)",
       toggleExport: "Open the export menu (Ctrl+Shift+E)",
       runWorkflow: "Run workflow (Ctrl+Enter)",
+    },
+    guidedTour: {
+      toggleLabel: "Start tour",
+      runningLabel: "Stop tour",
+      toggleDescription: "Launch a guided overview of the main areas of the editor.",
+      completedHint: "You already completed the tour, but you can restart it at any time.",
+      steps: {
+        header: {
+          title: "Header",
+          content:
+            "The top bar groups quick actions for language, theme, import/export, and catalog access.",
+        },
+        canvas: {
+          title: "React Flow canvas",
+          content:
+            "Build the workflow by dragging nodes on the canvas and connecting them. Use the minimap and controls to navigate.",
+        },
+        sidebar: {
+          title: "Contextual sidebar",
+          content:
+            "Review template details, validation insights, and run controls in the side panel.",
+        },
+        catalog: {
+          title: "Catalog",
+          content:
+            "Open the catalog to apply ready-made templates and drag preconfigured nodes onto the canvas.",
+        },
+      },
+      locale: {
+        back: "Back",
+        close: "Close",
+        last: "Finish",
+        next: "Next",
+        skip: "Skip tour",
+      },
     },
   },
 } as const;

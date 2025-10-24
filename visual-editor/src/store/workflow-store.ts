@@ -33,6 +33,22 @@ import type {
   WorkflowRunStepStatus,
 } from "../services/workflow-api";
 
+const GUIDED_TOUR_STORAGE_KEY = "datapizza-visual-editor-guided-tour-completed";
+
+const readGuidedTourCompletion = (): boolean => {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.localStorage.getItem(GUIDED_TOUR_STORAGE_KEY) === "true";
+};
+
+const writeGuidedTourCompletion = (completed: boolean): void => {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(GUIDED_TOUR_STORAGE_KEY, completed ? "true" : "false");
+};
+
 type WorkflowState = {
   nodes: Node[];
   edges: Edge[];
@@ -159,6 +175,20 @@ type WorkflowExecutionProgressActions = {
   updateExecutionFromRun: (status: WorkflowRunStatusResponse) => void;
 };
 
+type GuidedTourState = {
+  guidedTour: {
+    running: boolean;
+    completed: boolean;
+  };
+};
+
+type GuidedTourActions = {
+  startGuidedTour: () => void;
+  stopGuidedTour: () => void;
+  completeGuidedTour: () => void;
+  resetGuidedTour: () => void;
+};
+
 type WorkflowStore = WorkflowState &
   WorkflowActions &
   WorkflowExecutionState &
@@ -167,7 +197,9 @@ type WorkflowStore = WorkflowState &
   WorkflowValidationActions &
   WorkflowHistoryState &
   WorkflowHistoryActions &
-  WorkflowExecutionProgressActions;
+  WorkflowExecutionProgressActions &
+  GuidedTourState &
+  GuidedTourActions;
 
 type StoreSet = StoreApi<WorkflowStore>["setState"];
 
@@ -189,6 +221,8 @@ const createInitialValidationState = (): WorkflowValidationState => ({
   lastUpdatedAt: Date.now(),
 });
 
+const initialGuidedTourCompleted = readGuidedTourCompletion();
+
 export const useWorkflowStore = create<WorkflowStore>()(
   subscribeWithSelector((set, get) => ({
   nodes: [],
@@ -198,6 +232,10 @@ export const useWorkflowStore = create<WorkflowStore>()(
   validationMetadata: undefined,
   validation: createInitialValidationState(),
   nodeValidationErrors: {},
+  guidedTour: {
+    running: false,
+    completed: initialGuidedTourCompleted,
+  },
   history: [],
   initialize: (nodes, edges) => {
     set(
@@ -443,6 +481,40 @@ export const useWorkflowStore = create<WorkflowStore>()(
         },
       };
     }),
+  startGuidedTour: () => {
+    writeGuidedTourCompletion(false);
+    set({
+      guidedTour: {
+        running: true,
+        completed: false,
+      },
+    });
+  },
+  stopGuidedTour: () =>
+    set((state) => ({
+      guidedTour: {
+        ...state.guidedTour,
+        running: false,
+      },
+    })),
+  completeGuidedTour: () => {
+    writeGuidedTourCompletion(true);
+    set({
+      guidedTour: {
+        running: false,
+        completed: true,
+      },
+    });
+  },
+  resetGuidedTour: () => {
+    writeGuidedTourCompletion(false);
+    set((state) => ({
+      guidedTour: {
+        ...state.guidedTour,
+        completed: false,
+      },
+    }));
+  },
   setValidationMetadata: (metadata) => {
     set({ validationMetadata: metadata });
     get().runValidation();
@@ -498,6 +570,11 @@ export const workflowSelectors = {
   updateNodeLabel: (state: WorkflowStore) => state.updateNodeLabel,
   updateNodeKind: (state: WorkflowStore) => state.updateNodeKind,
   updateNodeParameters: (state: WorkflowStore) => state.updateNodeParameters,
+  guidedTour: (state: WorkflowStore) => state.guidedTour,
+  startGuidedTour: (state: WorkflowStore) => state.startGuidedTour,
+  stopGuidedTour: (state: WorkflowStore) => state.stopGuidedTour,
+  completeGuidedTour: (state: WorkflowStore) => state.completeGuidedTour,
+  resetGuidedTour: (state: WorkflowStore) => state.resetGuidedTour,
 } as const;
 
 function mapValidationReport(

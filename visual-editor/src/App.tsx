@@ -68,15 +68,11 @@ import {
 } from "./data/workflow-templates";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import type { TimelineFilter } from "./components/RunHistoryPanel";
-import {
-  availableLocales,
-  defaultLocale,
-  normalizeLocale,
-  useTranslations,
-  type Locale,
-} from "./i18n";
+import { defaultLocale, normalizeLocale, useTranslations, type Locale } from "./i18n";
 import type { Translations } from "./i18n/resources";
 import { TemplateCatalog } from "./components/TemplateCatalog";
+import { HeaderActions } from "./components/HeaderActions";
+import { GuidedTour } from "./components/GuidedTour";
 
 const NodeInspector = lazy(() => import("./components/NodeInspector"));
 const RunHistoryPanel = lazy(() => import("./components/RunHistoryPanel"));
@@ -108,6 +104,9 @@ type AppHeaderProps = {
   locale: Locale;
   onLocaleChange: (locale: Locale) => void;
   translations: Translations[Locale];
+  onToggleGuidedTour: () => void;
+  guidedTourRunning: boolean;
+  guidedTourCompleted: boolean;
 };
 
 type ExportFormat = "json" | "yaml";
@@ -216,6 +215,7 @@ function AppHeader({
   onImport,
   onToggleTheme,
   onToggleLibrary,
+  onToggleGuidedTour,
   theme,
   activeTemplate,
   templateSource,
@@ -225,8 +225,10 @@ function AppHeader({
   locale,
   onLocaleChange,
   translations,
+  guidedTourRunning,
+  guidedTourCompleted,
 }: AppHeaderProps) {
-  const { header, aria, locales } = translations;
+  const { header, aria } = translations;
   const categoryInfo =
     WORKFLOW_TEMPLATE_CATEGORIES[activeTemplate.category] ??
     ({ label: activeTemplate.category, description: "" } as const);
@@ -236,12 +238,9 @@ function AppHeader({
       : activeTemplate.icon;
   const badgeLabel =
     templateSource === "import" ? header.importedBadge : categoryInfo.label ?? header.templateCategoryFallback;
-  const themeToggleLabel = theme === "light" ? header.themeToggle.light : header.themeToggle.dark;
-  const languageSelectId = "app-language-select";
-  const languageLabelId = `${languageSelectId}-label`;
 
   return (
-    <header className="app__header" role="banner">
+    <header className="app__header" role="banner" data-tour-id="guided-tour-header">
       <div className="app__header-layout">
         <div className="app__header-copy">
           <h1>{header.title}</h1>
@@ -274,62 +273,21 @@ function AppHeader({
             </p>
           ) : null}
         </div>
-        <div className="app__header-actions" role="group" aria-label={translations.shortcuts.heading}>
-          <div className="app__header-language">
-            <label className="visually-hidden" id={languageLabelId} htmlFor={languageSelectId}>
-              {header.languageLabel}
-            </label>
-            <select
-              id={languageSelectId}
-              className="select"
-              value={locale}
-              onChange={(event) => onLocaleChange(event.target.value as Locale)}
-              aria-labelledby={languageLabelId}
-            >
-              {availableLocales.map((option) => (
-                <option key={option} value={option}>
-                  {locales[option] ?? option.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            className="button button--ghost"
-            type="button"
-            onClick={onToggleLibrary}
-            aria-keyshortcuts="Ctrl+Shift+L"
-          >
-            {header.libraryButton}
-          </button>
-          <button
-            className="button button--ghost"
-            type="button"
-            onClick={onImport}
-            aria-keyshortcuts="Ctrl+Shift+I"
-          >
-            {header.importButton}
-          </button>
-          <button
-            className="button button--ghost"
-            type="button"
-            onClick={onToggleTheme}
-            aria-label={aria.themeToggle}
-          >
-            {themeToggleLabel}
-          </button>
-          <button
-            className="button button--primary"
-            type="button"
-            onClick={onToggleExportMenu}
-            aria-expanded={exportMenuOpen}
-            aria-haspopup="menu"
-            aria-label={aria.exportMenuButton}
-            data-export-toggle="true"
-            aria-keyshortcuts="Ctrl+Shift+E"
-          >
-            {header.exportButton}
-          </button>
-        </div>
+        <HeaderActions
+          locale={locale}
+          translations={translations}
+          onLocaleChange={onLocaleChange}
+          onToggleLibrary={onToggleLibrary}
+          onImport={onImport}
+          onToggleTheme={onToggleTheme}
+          onToggleExportMenu={onToggleExportMenu}
+          onToggleGuidedTour={onToggleGuidedTour}
+          exportMenuOpen={exportMenuOpen}
+          theme={theme}
+          guidedTourRunning={guidedTourRunning}
+          guidedTourCompleted={guidedTourCompleted}
+          shortcutsLabel={translations.shortcuts.heading}
+        />
       </div>
     </header>
   );
@@ -463,18 +421,10 @@ function WorkflowApp(): JSX.Element {
   const updateExecutionFromRun = useWorkflowStore(workflowSelectors.updateExecutionFromRun);
   const validation = useWorkflowStore(workflowSelectors.validation);
   const setValidationMetadataStore = useWorkflowStore(workflowSelectors.setValidationMetadata);
-
-  useEffect(() => {
-    if (!comparisonPair) {
-      return;
-    }
-    const [baseId, targetId] = comparisonPair;
-    const hasBase = history.some((run) => run.runId === baseId);
-    const hasTarget = history.some((run) => run.runId === targetId);
-    if (!hasBase || !hasTarget) {
-      setComparisonPair(undefined);
-    }
-  }, [comparisonPair, history]);
+  const guidedTour = useWorkflowStore(workflowSelectors.guidedTour);
+  const startGuidedTour = useWorkflowStore(workflowSelectors.startGuidedTour);
+  const stopGuidedTour = useWorkflowStore(workflowSelectors.stopGuidedTour);
+  const resetGuidedTour = useWorkflowStore(workflowSelectors.resetGuidedTour);
 
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
   const [locale, setLocale] = useState<Locale>(() => {
@@ -548,6 +498,18 @@ function WorkflowApp(): JSX.Element {
   const [logsByRun, setLogsByRun] = useState<Record<string, WorkflowRunLogEntry[]>>({});
   const [logCursorByRun, setLogCursorByRun] = useState<Record<string, number>>({});
   const [logsLoadingRunId, setLogsLoadingRunId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!comparisonPair) {
+      return;
+    }
+    const [baseId, targetId] = comparisonPair;
+    const hasBase = history.some((run) => run.runId === baseId);
+    const hasTarget = history.some((run) => run.runId === targetId);
+    if (!hasBase || !hasTarget) {
+      setComparisonPair(undefined);
+    }
+  }, [comparisonPair, history]);
 
   const nodeValidationSummaries = useMemo(() => {
     const summaries = new Map<string, NodeValidationSummary>();
@@ -802,47 +764,6 @@ function WorkflowApp(): JSX.Element {
     };
   }, [isExportMenuOpen]);
 
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      const hasCtrlOrMeta = event.ctrlKey || event.metaKey;
-
-      if (hasCtrlOrMeta && event.shiftKey) {
-        if (key === "l") {
-          event.preventDefault();
-          toggleLibrary();
-          return;
-        }
-        if (key === "i") {
-          event.preventDefault();
-          openImportDialog();
-          return;
-        }
-        if (key === "e") {
-          event.preventDefault();
-          setIsExportMenuOpen((open) => !open);
-          return;
-        }
-      }
-
-      if (hasCtrlOrMeta && key === "enter") {
-        event.preventDefault();
-        if (!execution.loading) {
-          void runWorkflow();
-        }
-      }
-    };
-
-    document.addEventListener("keydown", handleShortcut);
-    return () => {
-      document.removeEventListener("keydown", handleShortcut);
-    };
-  }, [execution.loading, openImportDialog, runWorkflow, toggleLibrary, setIsExportMenuOpen]);
-
   const createWorkflowSnapshot = useCallback(() => {
     return serializeWorkflowFromStore({
       metadata: {
@@ -974,6 +895,41 @@ function WorkflowApp(): JSX.Element {
 
   const toggleExportMenu = useCallback(() => {
     setIsExportMenuOpen((open) => !open);
+  }, []);
+
+  const toggleGuidedTour = useCallback(() => {
+    setIsExportMenuOpen(false);
+    setIsImportDialogOpen(false);
+    if (guidedTour.running) {
+      stopGuidedTour();
+      return;
+    }
+    if (guidedTour.completed) {
+      resetGuidedTour();
+    }
+    startGuidedTour();
+  }, [
+    guidedTour.running,
+    guidedTour.completed,
+    resetGuidedTour,
+    startGuidedTour,
+    stopGuidedTour,
+    setIsExportMenuOpen,
+    setIsImportDialogOpen,
+  ]);
+
+  const openCatalogForGuidedTour = useCallback(() => {
+    setIsLibraryOpen(true);
+    setIsExportMenuOpen(false);
+  }, []);
+
+  const closeCatalogForGuidedTour = useCallback(() => {
+    setIsLibraryOpen(false);
+  }, []);
+
+  const toggleLibrary = useCallback(() => {
+    setIsLibraryOpen((open) => !open);
+    setIsExportMenuOpen(false);
   }, []);
 
   const openImportDialog = useCallback(() => {
@@ -1261,6 +1217,47 @@ function WorkflowApp(): JSX.Element {
     messages.executionUnexpectedError,
   ]);
 
+  useEffect(() => {
+    const handleShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      const hasCtrlOrMeta = event.ctrlKey || event.metaKey;
+
+      if (hasCtrlOrMeta && event.shiftKey) {
+        if (key === "l") {
+          event.preventDefault();
+          toggleLibrary();
+          return;
+        }
+        if (key === "i") {
+          event.preventDefault();
+          openImportDialog();
+          return;
+        }
+        if (key === "e") {
+          event.preventDefault();
+          setIsExportMenuOpen((open) => !open);
+          return;
+        }
+      }
+
+      if (hasCtrlOrMeta && key === "enter") {
+        event.preventDefault();
+        if (!execution.loading) {
+          void runWorkflow();
+        }
+      }
+    };
+
+    document.addEventListener("keydown", handleShortcut);
+    return () => {
+      document.removeEventListener("keydown", handleShortcut);
+    };
+  }, [execution.loading, openImportDialog, runWorkflow, toggleLibrary, setIsExportMenuOpen]);
+
   const handleRetry = useCallback(
     async (run: WorkflowRunHistoryItem) => {
       const definitionClone = JSON.parse(JSON.stringify(run.definition)) as WorkflowDefinition;
@@ -1340,11 +1337,6 @@ function WorkflowApp(): JSX.Element {
     setTheme((current) => (current === "light" ? "dark" : "light"));
   }, []);
 
-  const toggleLibrary = useCallback(() => {
-    setIsLibraryOpen((open) => !open);
-    setIsExportMenuOpen(false);
-  }, []);
-
   const applyTemplate = useCallback(
     (templateId: string) => {
       const template = templateMap.get(templateId);
@@ -1373,11 +1365,18 @@ function WorkflowApp(): JSX.Element {
           }}
         />
       ) : null}
+      <GuidedTour
+        translations={t.guidedTour}
+        openCatalog={openCatalogForGuidedTour}
+        closeCatalog={closeCatalogForGuidedTour}
+        isCatalogOpen={isLibraryOpen}
+      />
       <AppHeader
         onToggleExportMenu={toggleExportMenu}
         onImport={openImportDialog}
         onToggleTheme={toggleTheme}
         onToggleLibrary={toggleLibrary}
+        onToggleGuidedTour={toggleGuidedTour}
         theme={theme}
         activeTemplate={activeTemplate}
         templateSource={templateSource}
@@ -1385,8 +1384,15 @@ function WorkflowApp(): JSX.Element {
         workflowIcon={workflowMetadata.icon}
         exportMenuOpen={isExportMenuOpen}
         locale={locale}
-        onLocaleChange={setLocale}
+        onLocaleChange={(nextLocale) => {
+          setLocale(nextLocale);
+          if (typeof window !== "undefined") {
+            window.localStorage?.setItem("datapizza-visual-editor-locale", nextLocale);
+          }
+        }}
         translations={t}
+        guidedTourRunning={guidedTour.running}
+        guidedTourCompleted={guidedTour.completed}
       />
       {isExportMenuOpen ? (
         <div
@@ -1436,7 +1442,11 @@ function WorkflowApp(): JSX.Element {
         translations={t}
       />
       <main className="app__layout">
-        <section className="app__canvas" aria-label={workflowTexts.canvasAria}>
+        <section
+          className="app__canvas"
+          aria-label={workflowTexts.canvasAria}
+          data-tour-id="guided-tour-canvas"
+        >
           <ReactFlow
             className="workflow-canvas"
             style={{ width: "100%", height: "100%" }}
@@ -1460,7 +1470,11 @@ function WorkflowApp(): JSX.Element {
             <Background gap={16} color="var(--color-border-subtle)" />
           </ReactFlow>
         </section>
-        <aside className="app__sidebar" aria-label={workflowTexts.sidebarAria}>
+        <aside
+          className="app__sidebar"
+          aria-label={workflowTexts.sidebarAria}
+          data-tour-id="guided-tour-sidebar"
+        >
           <SidebarSection
             id="template-info"
             title={templateTexts.title}
