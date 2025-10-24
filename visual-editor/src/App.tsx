@@ -49,6 +49,7 @@ import {
   useWorkflowStore,
   workflowSelectors,
   type WorkflowRunHistoryItem,
+  type WorkflowRunMetadata,
 } from "./store/workflow-store";
 import {
   InputValidationNode,
@@ -66,7 +67,7 @@ import {
   type WorkflowTemplate,
 } from "./data/workflow-templates";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import type { TimelineFilter } from "./components/ExecutionHistoryTimeline";
+import type { TimelineFilter } from "./components/RunHistoryPanel";
 import {
   availableLocales,
   defaultLocale,
@@ -78,9 +79,8 @@ import type { Translations } from "./i18n/resources";
 import { TemplateCatalog } from "./components/TemplateCatalog";
 
 const NodeInspector = lazy(() => import("./components/NodeInspector"));
-const ExecutionHistoryTimeline = lazy(
-  () => import("./components/ExecutionHistoryTimeline"),
-);
+const RunHistoryPanel = lazy(() => import("./components/RunHistoryPanel"));
+const RunDiffViewer = lazy(() => import("./components/RunDiffViewer"));
 const LogViewer = lazy(() => import("./components/LogViewer"));
 
 const NODE_TEMPLATE_MIME = "application/datapizza-workflow-node-template";
@@ -464,6 +464,18 @@ function WorkflowApp(): JSX.Element {
   const validation = useWorkflowStore(workflowSelectors.validation);
   const setValidationMetadataStore = useWorkflowStore(workflowSelectors.setValidationMetadata);
 
+  useEffect(() => {
+    if (!comparisonPair) {
+      return;
+    }
+    const [baseId, targetId] = comparisonPair;
+    const hasBase = history.some((run) => run.runId === baseId);
+    const hasTarget = history.some((run) => run.runId === targetId);
+    if (!hasBase || !hasTarget) {
+      setComparisonPair(undefined);
+    }
+  }, [comparisonPair, history]);
+
   const [theme, setTheme] = useState<ThemeMode>(() => getPreferredTheme());
   const [locale, setLocale] = useState<Locale>(() => {
     if (typeof window !== "undefined") {
@@ -531,6 +543,7 @@ function WorkflowApp(): JSX.Element {
   const [importError, setImportError] = useState<string | undefined>(undefined);
   const [validationState, setValidationState] = useState<ValidationState>({ status: "idle", issues: [] });
   const [selectedRunId, setSelectedRunId] = useState<string | undefined>();
+  const [comparisonPair, setComparisonPair] = useState<[string, string] | undefined>();
   const [timelineFilter, setTimelineFilter] = useState<TimelineFilter>("all");
   const [logsByRun, setLogsByRun] = useState<Record<string, WorkflowRunLogEntry[]>>({});
   const [logCursorByRun, setLogCursorByRun] = useState<Record<string, number>>({});
@@ -603,6 +616,16 @@ function WorkflowApp(): JSX.Element {
     }
     void ensureLogsLoaded(selectedRunId);
   }, [selectedRunId, ensureLogsLoaded]);
+
+  const comparisonRuns = useMemo(() => {
+    if (!comparisonPair) {
+      return { base: undefined, target: undefined };
+    }
+    const [baseId, targetId] = comparisonPair;
+    const base = history.find((run) => run.runId === baseId);
+    const target = history.find((run) => run.runId === targetId);
+    return { base, target };
+  }, [comparisonPair, history]);
 
   const selectedRun = useMemo(
     () => history.find((run) => run.runId === selectedRunId),
@@ -1080,6 +1103,7 @@ function WorkflowApp(): JSX.Element {
         definition: WorkflowDefinition;
         options?: WorkflowRuntimeOptions;
         workflowName: string;
+        metadata?: WorkflowRunMetadata;
       },
     ) => {
       startExecution();
@@ -1102,6 +1126,7 @@ function WorkflowApp(): JSX.Element {
                 definition: historyContext.definition,
                 options: historyContext.options,
                 result: status.result,
+                metadata: historyContext.metadata,
                 error: status.error,
               });
               hasHistoryEntry = true;
@@ -1209,12 +1234,20 @@ function WorkflowApp(): JSX.Element {
     const optionsForHistory = hasRuntimeOptions
       ? (JSON.parse(JSON.stringify(runtimeOptions)) as WorkflowRuntimeOptions)
       : undefined;
+    const metadataForHistory: WorkflowRunMetadata | undefined =
+      trimmedEnvironment || trimmedDataset
+        ? {
+            environment: trimmedEnvironment || undefined,
+            datasetUri: trimmedDataset || undefined,
+          }
+        : undefined;
 
     try {
       await performExecution(payload, {
         definition: definitionForHistory,
         options: optionsForHistory,
         workflowName: workflowMetadata.name,
+        metadata: metadataForHistory,
       });
     } catch (error) {
       console.error(messages.executionUnexpectedError, error);
@@ -1244,6 +1277,7 @@ function WorkflowApp(): JSX.Element {
           definition: definitionClone,
           options: optionsClone,
           workflowName: run.workflowName,
+          metadata: run.metadata,
         });
       } catch (error) {
         console.error(messages.retryError, error);
@@ -1285,6 +1319,13 @@ function WorkflowApp(): JSX.Element {
       }
     },
     [archiveHistoryEntry, updateHistoryRun, messages.archiveError],
+  );
+
+  const handleCompareRuns = useCallback(
+    (pair: [WorkflowRunHistoryItem, WorkflowRunHistoryItem]) => {
+      setComparisonPair([pair[0].runId, pair[1].runId]);
+    },
+    [],
   );
 
   const handleSelectRun = useCallback((runId: string) => {
@@ -1644,7 +1685,7 @@ function WorkflowApp(): JSX.Element {
         description={historyTexts.description}
       >
         <Suspense fallback={<p className="muted-copy">{historyTexts.loading}</p>}>
-          <ExecutionHistoryTimeline
+          <RunHistoryPanel
             runs={history}
             filter={timelineFilter}
             onFilterChange={handleFilterChange}
@@ -1653,6 +1694,38 @@ function WorkflowApp(): JSX.Element {
             onRetry={handleRetry}
             onDownload={handleDownloadArtifacts}
             onArchive={handleArchiveRun}
+            onCompare={handleCompareRuns}
+            translations={{
+              filterAll: historyTexts.filterAll,
+              filterRunning: historyTexts.filterRunning,
+              filterSuccess: historyTexts.filterSuccess,
+              filterFailure: historyTexts.filterFailure,
+              filterArchived: historyTexts.filterArchived,
+              emptyHistory: historyTexts.emptyHistory,
+              compareButton: historyTexts.compareButton,
+              compareDisabled: historyTexts.compareDisabled,
+              compareSelectionLabel: historyTexts.compareSelectionLabel,
+              resetSelection: historyTexts.resetSelection,
+              selectForCompare: historyTexts.selectForCompare,
+              archivedBadge: historyTexts.archivedBadge,
+            }}
+          />
+        </Suspense>
+        <Suspense fallback={<p className="muted-copy">{historyTexts.loading}</p>}>
+          <RunDiffViewer
+            baseRun={comparisonRuns.base}
+            targetRun={comparisonRuns.target}
+            translations={{
+              title: historyTexts.diffTitle,
+              empty: historyTexts.diffEmpty,
+              error: historyTexts.diffError,
+              noChanges: historyTexts.diffNoChanges,
+              baseLabel: historyTexts.diffBaseLabel,
+              targetLabel: historyTexts.diffTargetLabel,
+              metadataHeading: historyTexts.metadataHeading,
+              metadataEnvironment: historyTexts.metadataEnvironment,
+              metadataDataset: historyTexts.metadataDataset,
+            }}
           />
         </Suspense>
         <Suspense fallback={<p className="muted-copy">{historyTexts.logsLoading}</p>}>

@@ -112,6 +112,17 @@ type WorkflowValidationContextState = {
   nodeValidationErrors: NodeValidationErrorMap;
 };
 
+export interface WorkflowRunSnapshot {
+  definition: string;
+  options?: string;
+  result?: string;
+}
+
+export interface WorkflowRunMetadata {
+  environment?: string;
+  datasetUri?: string;
+}
+
 export interface WorkflowRunHistoryItem {
   runId: string;
   status: WorkflowRunStatusResponse["status"];
@@ -122,18 +133,24 @@ export interface WorkflowRunHistoryItem {
   definition: WorkflowDefinition;
   options?: WorkflowRuntimeOptions;
   result?: WorkflowExecutionResult;
+  metadata?: WorkflowRunMetadata;
+  snapshot: WorkflowRunSnapshot;
   error?: string;
 }
+
+export type WorkflowRunHistoryInput = Omit<WorkflowRunHistoryItem, "snapshot">;
 
 type WorkflowHistoryState = {
   history: WorkflowRunHistoryItem[];
 };
 
 type WorkflowHistoryActions = {
-  addHistoryRun: (entry: WorkflowRunHistoryItem) => void;
+  addHistoryRun: (entry: WorkflowRunHistoryInput) => void;
   updateHistoryRun: (
     runId: string,
-    patch: Partial<Omit<WorkflowRunHistoryItem, "runId" | "definition" | "options">>,
+    patch: Partial<
+      Omit<WorkflowRunHistoryItem, "runId" | "definition" | "options" | "snapshot">
+    >,
   ) => void;
   archiveHistoryRun: (runId: string) => void;
 };
@@ -342,6 +359,8 @@ export const useWorkflowStore = create<WorkflowStore>()(
         definition: cloneSerializable(entry.definition),
         options: entry.options ? cloneSerializable(entry.options) : undefined,
         result: entry.result ? cloneSerializable(entry.result) : entry.result,
+        metadata: entry.metadata ? cloneSerializable(entry.metadata) : undefined,
+        snapshot: createHistorySnapshot(entry.definition, entry.options, entry.result),
       };
       const nextHistory = [clonedEntry, ...existing].sort((a, b) =>
         a.createdAt < b.createdAt ? 1 : -1,
@@ -355,9 +374,18 @@ export const useWorkflowStore = create<WorkflowStore>()(
           ? {
               ...run,
               ...patch,
-              result: patch.result
-                ? cloneSerializable(patch.result)
+              result: Object.prototype.hasOwnProperty.call(patch, "result")
+                ? patch.result
+                  ? cloneSerializable(patch.result)
+                  : patch.result
                 : run.result,
+              metadata: patch.metadata
+                ? cloneSerializable(patch.metadata)
+                : patch.metadata === undefined &&
+                  Object.prototype.hasOwnProperty.call(patch, "metadata")
+                ? undefined
+                : run.metadata,
+              snapshot: updateHistorySnapshot(run.snapshot, patch),
               error:
                 Object.prototype.hasOwnProperty.call(patch, "error")
                   ? patch.error
@@ -602,4 +630,32 @@ function cloneSerializable<T>(value: T): T {
   }
 
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function createHistorySnapshot(
+  definition: WorkflowDefinition,
+  options?: WorkflowRuntimeOptions,
+  result?: WorkflowExecutionResult,
+): WorkflowRunSnapshot {
+  return {
+    definition: JSON.stringify(definition),
+    options: options ? JSON.stringify(options) : undefined,
+    result: result ? JSON.stringify(result) : undefined,
+  };
+}
+
+function updateHistorySnapshot(
+  current: WorkflowRunSnapshot,
+  patch: Partial<
+    Omit<WorkflowRunHistoryItem, "runId" | "definition" | "options" | "snapshot">
+  >,
+): WorkflowRunSnapshot {
+  const nextSnapshot: WorkflowRunSnapshot = { ...current };
+
+  if (Object.prototype.hasOwnProperty.call(patch, "result")) {
+    nextSnapshot.result =
+      patch.result !== undefined ? JSON.stringify(patch.result) : undefined;
+  }
+
+  return nextSnapshot;
 }
